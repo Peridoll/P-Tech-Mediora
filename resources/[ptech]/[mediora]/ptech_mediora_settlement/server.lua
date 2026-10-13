@@ -15,7 +15,11 @@ lib.callback.register('ptech_mediora_settlement:submit', function(src, slot)
  local issued = meta.issuedAt or meta.date
  if not order or not issued then return { ok = false, message = 'この領収書の形式は未対応です' } end
  local key = ('%s:%s:%s'):format(citizenid, tostring(order), tostring(issued))
- local id = MySQL.insert.await('INSERT IGNORE INTO ptech_mediora_settlement (receipt_key, citizenid, item_name, status) VALUES (?, ?, ?, ?)', {key, citizenid, item.name, 'review'})
- if not id or id == 0 then return { ok = false, message = '受付済み、または保存失敗です' } end
+ local success, id = pcall(MySQL.insert.await, 'INSERT IGNORE INTO ptech_mediora_settlement (receipt_key, citizenid, item_name, status) VALUES (?, ?, ?, ?)', {key, citizenid, item.name, 'review'})
+ if not success then
+  print(('[Mediora Settlement] DB submit failed: %s'):format(tostring(id)))
+  return { ok = false, message = '保存に失敗しました' }
+ end
+ if not id or id == 0 then return { ok = false, message = '受付済みです' } end
  return { ok = true, message = '審査受付しました。支払いはまだ発生しません' }
 end)
