@@ -70,14 +70,18 @@ lib.callback.register('ptech_mediora_medical:createReport', function(src, target
         summaries[#summaries + 1] = ('%s: %s / 重症度 %s / 出血 %s')
             :format(names[row.part], kinds[row.kind], row.severity or '未取得', row.bleed or '未取得')
     end
+    local patientName = identity(patient.PlayerData)
+    local job = medic.PlayerData.job or {}
+    local grade = job.grade
+    local gradeName = type(grade) == 'table' and (grade.name or grade.level) or grade
     local report = {
+        label = '診断書 — ' .. patientName,
         reportId = id, patientId = patient.PlayerData.citizenid,
-        patientName = identity(patient.PlayerData), examinerId = medic.PlayerData.citizenid,
-        examinerName = identity(medic.PlayerData), issuedAt = os.date('!%Y-%m-%dT%H:%M:%SZ'),
+        patientName = patientName, examinerId = medic.PlayerData.citizenid,
+        examinerName = identity(medic.PlayerData), examinerGrade = tostring(gradeName or '不明'), issuedAt = os.date('!%Y-%m-%dT%H:%M:%SZ'),
         death = result.death, injuries = observation.rows, observationStatus = observation.status,
         dataSource = 'Wasabi client observation (not server-verified injuries)',
-        description = ('診療番号: %s\n患者: %s\n状態: %s\n負傷情報: %s\n%s\n治療・請求は未実装')
-            :format(id, identity(patient.PlayerData), result.death, observation.status, table.concat(summaries, '\n')),
+        description = ('患者: %s'):format(patientName), -- do not expose clinical details in inventory hover
     }
     issuing[src] = true
     local ok, added = pcall(function() return exports.ox_inventory:AddItem(src, Config.ReportItem, 1, report) end)
