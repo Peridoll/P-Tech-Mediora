@@ -4,7 +4,7 @@ local function permitted(src, target)
   local job = medic and medic.PlayerData and medic.PlayerData.job
   if not job or not Config.Jobs[job.name] or (Config.RequireDuty and not job.onduty) or not patient then return nil end
   local a, b = GetPlayerPed(src), GetPlayerPed(target)
-  if a == 0 or b == 0 or GetPlayerRoutingBucket(src) ~= GetPlayerRoutingBucket(target) then return nil end
+  if not a or not b or a == 0 or b == 0 or GetPlayerRoutingBucket(src) ~= GetPlayerRoutingBucket(target) then return nil end
   if #(GetEntityCoords(a) - GetEntityCoords(b)) > Config.Distance then return nil end
   return medic, patient
 end
@@ -21,9 +21,12 @@ lib.callback.register('ptech_mediora_billing:draft', function(src, target, servi
   end
   sequence = sequence + 1
   local id = ('MED-%d-%d-%d'):format(os.time(), src, sequence)
-  local ok = MySQL.insert.await('INSERT INTO ptech_mediora_billing (id, issuer, patient, items, total, status) VALUES (?, ?, ?, ?, ?, ?)', {
+  local success, inserted = pcall(MySQL.insert.await, 'INSERT INTO ptech_mediora_billing (id, issuer, patient, items, total, status) VALUES (?, ?, ?, ?, ?, ?)', {
     id, medic.PlayerData.citizenid, patient.PlayerData.citizenid, json.encode(lines), total, 'draft'
   })
-  if not ok then return { ok = false, message = '保存できませんでした' } end
+  if not success or not inserted then
+    print(('[Mediora Billing] draft insert failed: %s'):format(tostring(inserted)))
+    return { ok = false, message = '保存できませんでした' }
+  end
   return { ok = true, id = id, total = total, status = 'draft' }
 end)

@@ -3,8 +3,10 @@ local function eligible(src)
   local p = exports.qbx_core:GetPlayer(src)
   local job = p and p.PlayerData and p.PlayerData.job
   if not job or (Config.RequireDuty and not job.onduty) then return false end
-  local grade = job.grade and (job.grade.level or job.grade) or 0
-  return Config.Jobs[job.name] ~= nil and tonumber(grade) >= Config.Jobs[job.name]
+  local grade = type(job.grade) == 'table' and job.grade.level or job.grade
+  grade = tonumber(grade) or -1
+  local minimum = Config.Jobs[job.name]
+  return type(minimum) == 'number' and grade >= minimum
 end
 local function validPosition(src)
   local ped = GetPlayerPed(src)
