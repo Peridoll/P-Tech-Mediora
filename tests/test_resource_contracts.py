@@ -27,13 +27,13 @@ class ResourceContractTests(unittest.TestCase):
                             if rel.startswith('@'): continue
                             self.assertTrue((base / rel).is_file(), f'{name}: missing {rel}')
 
-    def test_readme_is_the_only_markdown_document(self):
+    def test_project_markdown_documents_are_consolidated(self):
         markdown_files = sorted(
             path.relative_to(PROJECT_ROOT).as_posix()
             for path in PROJECT_ROOT.rglob('*.md')
             if '.git' not in path.parts
         )
-        self.assertEqual(markdown_files, ['README.md'])
+        self.assertEqual(markdown_files, ['DEVELOPMENT.md', 'README.md'])
 
     def test_no_legacy_composite_dependency(self):
         for name in MODULES:
