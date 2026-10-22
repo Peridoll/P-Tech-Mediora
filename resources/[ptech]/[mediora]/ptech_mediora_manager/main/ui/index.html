@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+  <title>EMSManager</title>
+</head>
+<body>
+  <main id="tablet" class="tablet" hidden>
+    <section id="wallpaper" class="screen">
+      <header class="topbar">
+        <div><strong id="title">EMSManager</strong><span id="medic-name"></span></div>
+        <button id="close" type="button" aria-label="閉じる">×</button>
+      </header>
+      <section id="home-page" class="page home">
+        <p class="eyebrow">MEDIORA</p>
+        <h1>EMSManager</h1>
+        <p class="home-copy">利用するアプリを選択してください。</p>
+        <button id="open-charts" class="app-card" type="button">
+          <span class="app-icon">✚</span><span>カルテ</span>
+        </button>
+      </section>
+      <section id="charts-page" class="page charts" hidden>
+        <div class="page-heading">
+          <button id="back-home" class="back" type="button">‹ ホーム</button>
+          <h1>カルテ</h1>
+        </div>
+        <form id="chart-search" class="search">
+          <label for="patient-id">患者ID</label>
+          <input id="patient-id" inputmode="numeric" autocomplete="off" placeholder="オンラインIDを入力">
+          <button type="submit">確認</button>
+        </form>
+        <p id="chart-notice" class="notice" hidden></p>
+        <section id="chart-content" class="chart-content" hidden>
+          <div class="patient">
+            <div><p id="patient-name">氏名未取得</p><span id="patient-id-label">ID —</span></div>
+          </div>
+          <div class="chart-grid">
+            <div id="chart-list" class="chart-list"></div>
+            <article id="chart-detail" class="chart-detail"><p class="empty-detail">カルテを選択してください。</p></article>
+          </div>
+        </section>
+      </section>
+      <section id="treatment-page" class="page treatment" hidden>
+        <div class="page-heading">
+          <button id="back-charts" class="back" type="button">‹ カルテ</button>
+          <h1>治療準備</h1>
+        </div>
+        <p class="treatment-subtitle"><span id="treatment-patient-name">患者未選択</span>のカルテから負傷箇所を選択します。</p>
+        <div class="treatment-grid">
+          <section class="body-card" aria-label="負傷部位図">
+            <p class="section-label">負傷部位</p>
+            <div id="body-map" class="body-map" aria-label="人型の部位図">
+              <button type="button" data-part="head" class="body-part head">頭</button>
+              <button type="button" data-part="neck" class="body-part neck">首</button>
+              <button type="button" data-part="upper_body" class="body-part chest">胸部</button>
+              <button type="button" data-part="lower_body" class="body-part abdomen">腹部</button>
+              <button type="button" data-part="spine" class="body-part spine">背中</button>
+              <button type="button" data-part="left_arm" class="body-part left-arm">左腕</button>
+              <button type="button" data-part="right_arm" class="body-part right-arm">右腕</button>
+              <button type="button" data-part="left_hand" class="body-part left-hand">左手</button>
+              <button type="button" data-part="right_hand" class="body-part right-hand">右手</button>
+              <button type="button" data-part="left_leg" class="body-part left-leg">左脚</button>
+              <button type="button" data-part="right_leg" class="body-part right-leg">右脚</button>
+              <button type="button" data-part="left_foot" class="body-part left-foot">左足</button>
+              <button type="button" data-part="right_foot" class="body-part right-foot">右足</button>
+            </div>
+          </section>
+          <section class="treatment-panel">
+            <p class="section-label">カルテの負傷</p>
+            <div id="treatment-injury-list" class="treatment-injury-list"></div>
+            <div id="treatment-selection" class="treatment-selection">
+              <p class="empty-detail">負傷箇所を選択してください。</p>
+            </div>
+            <button id="start-treatment" class="treatment-action" type="button" disabled>処置を開始する（準備中）</button>
+          </section>
+        </div>
+        <p class="treatment-note">この画面は治療画面の仮置きです。医療品の消費、処置アニメーション、Wasabiへの治療反映はまだ行いません。</p>
+      </section>
+    </section>
+  </main>
+  <template id="chart-template">
+    <button class="chart-row" type="button">
+      <span class="chart-time"></span>
+      <span class="chart-summary"></span>
+      <span class="chart-examiner"></span>
+    </button>
+  </template>
+  <script src="app.js"></script>
+</body>
+</html>
