@@ -3,6 +3,7 @@ local syncAt, heldAt, sending = 0, nil, false
 local running, heli, pilot = false, nil, nil
 local stopRequested, activeNetId, pilotNetId = false, nil, nil
 local visibleAircraft = {}
+local rescuePanel, rescuePanelResourceState, rescuePanelShared = nil, nil, false
 local function notify(message, kind)
     lib.notify({ title = 'Mediora Rescue', description = message, type = kind or 'inform' })
 end
@@ -14,6 +15,41 @@ local function hint(message)
     SetTextFont(0); SetTextScale(0.0, 0.35); SetTextColour(255, 255, 255, 240)
     SetTextOutline(); BeginTextCommandDisplayText('STRING')
     AddTextComponentSubstringPlayerName(message); EndTextCommandDisplayText(0.02, 0.76)
+end
+local function setRescuePanel(state, message, progress)
+    local marineState = GetResourceState('ptech_mediora_marine')
+    if not state then
+        if rescuePanel and marineState == 'started' then
+            pcall(function() exports['ptech_mediora_marine']:removeActionPanel('rescue') end)
+        end
+        rescuePanel, rescuePanelResourceState, rescuePanelShared = nil, marineState, false
+        return marineState == 'started'
+    end
+
+    local panel = {
+        id = 'rescue',
+        title = '緊急離脱',
+        icon = 'R',
+        state = state,
+        text = message or '',
+        progress = progress,
+    }
+    local unchanged = rescuePanel and rescuePanel.state == panel.state
+        and rescuePanel.text == panel.text and rescuePanel.progress == panel.progress
+    if unchanged and rescuePanelResourceState == marineState and rescuePanelShared then return true end
+
+    rescuePanel, rescuePanelResourceState = panel, marineState
+    rescuePanelShared = false
+    if marineState ~= 'started' then return false end
+    local ok, accepted = pcall(function() return exports['ptech_mediora_marine']:setActionPanel(panel) end)
+    rescuePanelShared = ok and accepted == true
+    return rescuePanelShared
+end
+local function drawRescueFallback(message, progress)
+    if not rescuePanel or rescuePanelShared then return end
+    local text = message or rescuePanel.text
+    if progress ~= nil then text = ('%s（%d%%）'):format(text, progress) end
+    hint(text)
 end
 local function loadModel(name)
     local hash = joaat(name)
@@ -27,6 +63,7 @@ local function cleanup()
     if activeNetId then TriggerServerEvent('ptech_mediora_rescue:finish') end
     activeNetId, pilotNetId = nil, nil
     pilot, heli = nil, nil
+    setRescuePanel(nil)
 end
 local function ghost()
     if not heli or not DoesEntityExist(heli) then return end
@@ -55,6 +92,7 @@ local function flight(netId, netPilot)
     if running then return end
     running = true
     stopRequested = false
+    setRescuePanel('active', '救助機を確認しています')
     activeNetId, pilotNetId = netId, netPilot
     local ped = PlayerPedId()
     local start = GetEntityCoords(ped)
@@ -79,6 +117,7 @@ local function flight(netId, netPilot)
         notify('パイロットが搭乗できません', 'error')
         cleanup(); running = false; return
     end
+    setRescuePanel('active', '救助機が到着しました。患者を回収しています')
     ghost()
     -- 1秒回収: GTA標準ロープは屋内・地下への長距離描画に制限があるため、
     -- 現段階ではロープの視覚演出を保証せず、1秒後の搭乗処理を優先する。
@@ -95,6 +134,7 @@ local function flight(netId, netPilot)
         cleanup(); running = false; return
     end
     TriggerServerEvent('ptech_mediora_rescue:phase', 'transporting')
+    setRescuePanel('active', '本院へ搬送中です')
     CreateThread(function()
         while running do
             Wait(0)
@@ -180,23 +220,52 @@ CreateThread(function()
                 status.receivedAt = GetGameTimer()
             end
         end
-        if running or not status.eligible or status.used then heldAt = nil; Wait(250)
+        if running then
+            heldAt = nil
+            if rescuePanel then drawRescueFallback() else
+                local shared = setRescuePanel('active', '緊急搬送を実行中です')
+                if not shared then drawRescueFallback() end
+            end
+            Wait(250)
+        elseif not status.eligible or status.used then
+            heldAt = nil
+            setRescuePanel(nil)
+            Wait(250)
         else
             local remaining = math.max(0, (status.remaining or 0) - (now - (status.receivedAt or now)))
-            if remaining > 0 then heldAt = nil; hint('緊急離脱まで ' .. clock(remaining))
+            if remaining > 0 then
+                heldAt = nil
+                local message = '緊急離脱まで ' .. clock(remaining)
+                local shared = setRescuePanel('countdown', message)
+                if not shared then hint(message) end
             else
                 DisableControlAction(0, Config.Control, true)
                 if IsDisabledControlPressed(0, Config.Control) then
                     heldAt = heldAt or now
                     local pct = math.min(100, math.floor((now - heldAt) / (Config.HoldDuration * 1000) * 100))
-                    hint(('%s 長押しで緊急離脱（%d%%）'):format(Config.ControlLabel, pct))
+                    local message = Config.ControlLabel .. ' 長押しで緊急離脱'
+                    local shared = setRescuePanel('holding', message, pct)
+                    if not shared then hint(('%s（%d%%）'):format(message, pct)) end
                     if pct >= 100 and not sending then
                         sending, heldAt = true, nil
                         local ok, accepted = pcall(lib.callback.await, 'ptech_mediora_rescue:request', false)
                         sending = false
-                        if ok and accepted then status.used = true else notify('救助要請を受理できませんでした', 'error'); syncAt = 0 end
+                        if ok and accepted then
+                            status.used = true
+                            local panel = setRescuePanel('active', '救助機を呼び出しています')
+                            if not panel then hint('救助機を呼び出しています') end
+                        else
+                            notify('救助要請を受理できませんでした', 'error')
+                            setRescuePanel(nil)
+                            syncAt = 0
+                        end
                     end
-                else heldAt = nil; hint(Config.ControlLabel .. ' 長押しで緊急離脱') end
+                else
+                    heldAt = nil
+                    local message = Config.ControlLabel .. ' 長押しで緊急離脱'
+                    local shared = setRescuePanel('ready', message, 0)
+                    if not shared then hint(message) end
+                end
             end
             Wait(0)
         end

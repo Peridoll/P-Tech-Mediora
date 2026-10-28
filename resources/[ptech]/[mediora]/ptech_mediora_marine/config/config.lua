@@ -28,3 +28,8 @@ Config.Flotation = {
         Distance = 120.0,
     },
 }
+
+-- MarineとRescueの右側アクション表示を切り替えるキー。
+Config.ActionPanel = {
+    SwitchKey = 'F6', -- FiveMのキー設定から変更可能。
+}

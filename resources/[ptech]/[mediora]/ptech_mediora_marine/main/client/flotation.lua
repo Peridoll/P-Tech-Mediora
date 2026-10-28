@@ -11,6 +11,39 @@ local function notify(text, kind)
     lib.notify({ title = '緊急浮上装置', description = text, type = kind or 'inform' })
 end
 
+local function sendActionPanel(id, panel)
+    SendNUIMessage({
+        action = panel and 'setPanel' or 'removePanel',
+        id = id,
+        panel = panel,
+        switchKey = Config.ActionPanel and Config.ActionPanel.SwitchKey or 'F6',
+    })
+end
+
+-- Rescueから任意で呼び出す共通表示API。Marineを導入しない環境でもRescueは動作する。
+exports('setActionPanel', function(panel)
+    if type(panel) ~= 'table' or panel.id ~= 'rescue' or type(panel.text) ~= 'string' then return false end
+    sendActionPanel('rescue', panel)
+    return true
+end)
+
+exports('removeActionPanel', function(id)
+    if id ~= 'rescue' then return false end
+    sendActionPanel('rescue', nil)
+    return true
+end)
+
+if lib.addKeybind then
+    lib.addKeybind({
+        name = 'ptech_mediora_action_panel_next',
+        description = 'Medioraのアクション表示タブを切り替える',
+        defaultKey = Config.ActionPanel and Config.ActionPanel.SwitchKey or 'F6',
+        onPressed = function()
+            SendNUIMessage({ action = 'nextTab' })
+        end,
+    })
+end
+
 local function isPlayerOrVehicleInWater(ped)
     if IsEntityInWater(ped) then return true end
     local vehicle = GetVehiclePedIsIn(ped, false)
@@ -20,13 +53,19 @@ end
 local function showUi(state, text, progress)
     if state == nil then
         if not floatUi then return end
-        SendNUIMessage({ action = 'hide' })
+        sendActionPanel('marine', nil)
         floatUi = nil
         return
     end
     progress = progress and math.max(0, math.min(100, progress)) or nil
     if floatUi and floatUi.state == state and floatUi.text == text and floatUi.progress == progress then return end
-    SendNUIMessage({ action = 'show', state = state, text = text, progress = progress })
+    sendActionPanel('marine', {
+        title = '緊急浮上装置',
+        icon = '◌',
+        state = state,
+        text = text,
+        progress = progress,
+    })
     floatUi = { state = state, text = text, progress = progress }
 end
 
@@ -156,7 +195,8 @@ local function reset()
     obstacleCheckAt = 0
     using = false
     deathStarted, holdStarted, activationErrorUntil = nil, nil, 0
-    showUi(nil)
+    floatUi = nil
+    SendNUIMessage({ action = 'clearPanels' })
 end
 
 RegisterNetEvent('ptech_mediora_marine:resetFlotation', function()
