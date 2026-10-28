@@ -5,7 +5,7 @@ import unittest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ROOT = PROJECT_ROOT / 'resources' / '[ptech]' / '[mediora]'
-MODULES = ['medical', 'manager', 'patients', 'escort', 'procurement', 'pharmacy', 'billing', 'settlement', 'marine']
+MODULES = ['medical', 'marine', 'manager', 'patients', 'escort', 'procurement', 'pharmacy', 'billing', 'settlement']
 
 class ResourceContractTests(unittest.TestCase):
     def test_all_resources_have_manifests(self):
@@ -13,7 +13,7 @@ class ResourceContractTests(unittest.TestCase):
             with self.subTest(module=name):
                 base = ROOT / f'ptech_mediora_{name}'
                 self.assertTrue((base / 'fxmanifest.lua').is_file())
-                config = base / ('config/config.lua' if name in ('medical', 'manager', 'escort', 'marine') else 'config.lua')
+                config = base / ('config/config.lua' if name in ('medical', 'marine', 'manager', 'escort') else 'config.lua')
                 self.assertTrue(config.is_file())
 
     def test_manifest_script_paths_exist(self):
@@ -82,6 +82,66 @@ class ResourceContractTests(unittest.TestCase):
         self.assertNotIn('ptech_diagnosis', config)
         self.assertNotIn("'ox_inventory'", manifest)
 
+    def test_mediora_treatment_item_contract(self):
+        medical = ROOT / 'ptech_mediora_medical'
+        manifest = (medical / 'fxmanifest.lua').read_text(encoding='utf-8')
+        items = (medical / 'config/items.lua').read_text(encoding='utf-8')
+        install_items = (medical / 'assets/install/ox_inventory/items.lua').read_text(encoding='utf-8')
+        treatments = (medical / 'config/treatment_config.lua').read_text(encoding='utf-8')
+        expected = {
+            'shot': 'ptech_mediora_tweezers',
+            'stabbed': 'ptech_mediora_suturekit',
+            'beat': 'ptech_mediora_icepack',
+            'burned': 'ptech_mediora_burncream',
+        }
+
+        self.assertIn("'config/items.lua'", manifest)
+        self.assertIn('MedioraItems = {', items)
+        self.assertNotIn('MedioraOxInventoryItems', items)
+        self.assertIn('return {', install_items)
+        self.assertIn('既存の items.lua を上書きしないこと', install_items)
+        self.assertEqual(len(re.findall(r'^\s*consume\s*=\s*0,', install_items, re.M)), len(expected))
+        for injury, item in expected.items():
+            with self.subTest(injury=injury):
+                self.assertIn(f"['{item}'] = {{", items)
+                self.assertIn(f"['{item}'] = {{", install_items)
+                self.assertIn(f"treatment = '{injury}'", items)
+                self.assertIn(f"{injury} = {{", treatments)
+                self.assertIn(f"item = '{item}'", treatments)
+                self.assertIn(f"wasabiInjury = '{injury}'", treatments)
+
+    def test_marine_flotation_contract(self):
+        marine = ROOT / 'ptech_mediora_marine'
+        config = (marine / 'config/config.lua').read_text(encoding='utf-8')
+        manifest = (marine / 'fxmanifest.lua').read_text(encoding='utf-8')
+        shared = (marine / 'main/shared/rules.lua').read_text(encoding='utf-8')
+        client = (marine / 'main/client/flotation.lua').read_text(encoding='utf-8')
+        server = (marine / 'main/server/flotation.lua').read_text(encoding='utf-8')
+        page = (marine / 'main/ui/index.html').read_text(encoding='utf-8')
+        app = (marine / 'main/ui/app.js').read_text(encoding='utf-8')
+
+        self.assertIn('Flotation = {', config)
+        self.assertIn('Countdown = 180', config)
+        self.assertIn("'main/client/flotation.lua'", manifest)
+        self.assertIn("'main/server/flotation.lua'", manifest)
+        self.assertIn('function Marine.validSurface', shared)
+        self.assertIn('function Marine.busy', shared)
+        self.assertIn("ptech_mediora_marine:activateFlotation", client)
+        self.assertIn("ptech_mediora_marine:activateFlotation", server)
+        self.assertIn("ptech_mediora_marine:flotationWater", client)
+        self.assertIn("ptech_mediora_marine:flotationWater", server)
+        self.assertIn('receiveFloat(id, float, revision)', client)
+        self.assertNotIn('source == 65535', client)
+        self.assertIn('id="flotation"', page)
+        self.assertIn("data.action === 'show'", app)
+        self.assertNotIn('Config.Fins', config)
+        self.assertNotIn('ox_inventory', manifest)
+        self.assertFalse((marine / 'main/client/client.lua').exists())
+        self.assertFalse((marine / 'main/server/server.lua').exists())
+        medical = ROOT / 'ptech_mediora_medical'
+        self.assertNotIn('Flotation = {', (medical / 'config/config.lua').read_text(encoding='utf-8'))
+        self.assertNotIn('flotation.lua', (medical / 'fxmanifest.lua').read_text(encoding='utf-8'))
+
     def test_manager_tablet_contract(self):
         manager = ROOT / 'ptech_mediora_manager'
         manifest = (manager / 'fxmanifest.lua').read_text(encoding='utf-8')
@@ -100,34 +160,17 @@ class ResourceContractTests(unittest.TestCase):
         manager = ROOT / 'ptech_mediora_manager'
         page = (manager / 'main/ui/index.html').read_text(encoding='utf-8')
         app = (manager / 'main/ui/app.js').read_text(encoding='utf-8')
+        client = (manager / 'main/client/client.lua').read_text(encoding='utf-8')
         self.assertIn('id="treatment-page"', page)
+        self.assertIn('id="treatment-supply-list"', page)
         self.assertIn('id="open-treatment"', app)
         self.assertIn('function renderTreatment(chart)', app)
+        self.assertIn('function renderTreatmentSupplies()', app)
         self.assertIn("showPage('treatment')", app)
-        self.assertIn('処置を開始する（準備中）', page)
+        self.assertIn("getTreatmentItems()", client)
+        self.assertIn('treatmentItems = treatmentItems()', client)
         self.assertNotIn('RemoveItem(', app)
         self.assertNotIn('treatPlayer', app)
-
-    def test_marine_common_flotation_contract(self):
-        marine = ROOT / 'ptech_mediora_marine'
-        manifest = (marine / 'fxmanifest.lua').read_text(encoding='utf-8')
-        config = (marine / 'config/config.lua').read_text(encoding='utf-8')
-        client = (marine / 'main/client/client.lua').read_text(encoding='utf-8')
-        server = (marine / 'main/server/server.lua').read_text(encoding='utf-8')
-        self.assertNotIn("'ox_target'", manifest)
-        self.assertIn('Config.Flotation', config)
-        self.assertRegex(config, r'Countdown\s*=\s*180')
-        self.assertRegex(config, r'Control\s*=\s*23')
-        self.assertRegex(config, r'HoldDuration\s*=\s*1\.0')
-        for data in (config, client, server):
-            self.assertNotIn('ptech_emergency_bag', data)
-            self.assertNotIn('useBag', data)
-            self.assertNotIn('Config.Bag', data)
-        self.assertIn('activateFlotation', client)
-        self.assertIn('activateFlotation', server)
-        self.assertIn('GetPlayers()', server)
-        self.assertIn('浮上装置使用まで', client)
-        self.assertIn('prop_life_ring_01', config)
 
 if __name__ == '__main__':
     unittest.main()

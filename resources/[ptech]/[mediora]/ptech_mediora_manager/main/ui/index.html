@@ -49,6 +49,11 @@
         </div>
         <p class="treatment-subtitle"><span id="treatment-patient-name">患者未選択</span>のカルテから負傷箇所を選択します。</p>
         <div class="treatment-grid">
+          <section class="supply-panel" aria-label="医療品一覧">
+            <p class="section-label">医療品</p>
+            <div id="treatment-supply-list" class="treatment-supply-list"></div>
+            <p class="supply-note">画像を用意するまで、医療キットの名称を仮アイコンとして表示します。</p>
+          </section>
           <section class="body-card" aria-label="負傷部位図">
             <p class="section-label">負傷部位</p>
             <div id="body-map" class="body-map" aria-label="人型の部位図">
@@ -73,7 +78,7 @@
             <div id="treatment-selection" class="treatment-selection">
               <p class="empty-detail">負傷箇所を選択してください。</p>
             </div>
-            <button id="start-treatment" class="treatment-action" type="button" disabled>処置を開始する（準備中）</button>
+            <p class="treatment-pending">処置の実行とアイテム消費はまだ開始しません。</p>
           </section>
         </div>
         <p class="treatment-note">この画面は治療画面の仮置きです。医療品の消費、処置アニメーション、Wasabiへの治療反映はまだ行いません。</p>

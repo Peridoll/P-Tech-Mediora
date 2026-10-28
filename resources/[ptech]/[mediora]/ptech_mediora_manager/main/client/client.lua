@@ -12,6 +12,14 @@ local function closeManager()
     SendNUIMessage({ action = 'close' })
 end
 
+local function treatmentItems()
+    if GetResourceState('ptech_mediora_medical') ~= 'started' then return {} end
+    local ok, items = pcall(function()
+        return exports.ptech_mediora_medical:getTreatmentItems()
+    end)
+    return ok and type(items) == 'table' and items or {}
+end
+
 local function openManager(initial)
     local access = lib.callback.await('ptech_mediora_medical:managerAccess', false)
     if not access or access.error then
@@ -31,6 +39,7 @@ local function openManager(initial)
             page = page,
             targetId = initial.targetId,
             chartId = initial.chartId,
+            treatmentItems = treatmentItems(),
         },
     })
 end
