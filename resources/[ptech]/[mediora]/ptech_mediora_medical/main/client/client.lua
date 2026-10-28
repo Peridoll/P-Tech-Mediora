@@ -1,5 +1,14 @@
 local busy = false
 
+-- 患者向けの表示だけを更新する。操作権や死亡・負傷状態は変更しない。
+RegisterNetEvent('ptech_mediora_medical:examinationStatus', function(active)
+    MedicalNuiSend('clinical', { action = 'examination:status', data = { active = active == true } })
+end)
+
+AddEventHandler('QBCore:Client:OnPlayerUnload', function()
+    MedicalNuiSend('clinical', { action = 'examination:status', data = { active = false } })
+end)
+
 local function notify(message, kind)
     lib.notify({ title = '診察', description = message, type = kind or 'error' })
 end
@@ -36,6 +45,7 @@ end
 local function startDiagnosis(target)
     if busy then return end
     busy = true
+    local authorizedTarget
     local ok, err = pcall(function()
         if not Medical.allowed(exports.qbx_core:GetPlayerData()) then
             notify('勤務中の医療職のみ利用できます'); return
@@ -44,9 +54,23 @@ local function startDiagnosis(target)
         if not target then notify(('%.1fm以内に対象がいません'):format(Config.Distance)); return end
         local auth = lib.callback.await('ptech_mediora_medical:inspect', false, target)
         if not auth or auth.error then notify(auth and auth.error or '診察許可を取得できません'); return end
+        authorizedTarget = target
+
+        -- 先に観察し、部位数からサーバーが演出時間を決める。取得失敗を無傷と混同しない。
+        local success, injuries = pcall(function()
+            return exports.wasabi_ambulance:diagnosePlayer(target)
+        end)
+        if Config.Debug then
+            print(('[ptech_mediora_medical] serverId=%s success=%s returnType=%s\n%s')
+                :format(target, tostring(success), type(injuries), Medical.describe(injuries)))
+        end
+        local confirm = lib.callback.await('ptech_mediora_medical:confirm', false, target, injuries, success)
+        if not confirm or confirm.error then
+            notify(confirm and confirm.error or '診察情報を確認できません'); return
+        end
 
         local finished = lib.progressCircle({
-            duration = Config.Examination.Duration,
+            duration = confirm.duration,
             label = Config.Examination.Label,
             position = 'bottom',
             canCancel = true,
@@ -56,25 +80,17 @@ local function startDiagnosis(target)
             prop = Config.Examination.Prop,
         })
         if not finished then
-            cancelExamination(target)
             notify('診察を中止しました', 'inform')
             return
         end
-
-        -- The patient can move, disconnect, or change buckets during the animation.
-        local confirm = lib.callback.await('ptech_mediora_medical:confirm', false, target)
-        if not confirm or confirm.error then notify(confirm and confirm.error or '対象を再確認できません'); return end
-        local success, injuries = pcall(function()
-            return exports.wasabi_ambulance:diagnosePlayer(target)
-        end)
 
         local snapshot = {
             title = '診察 — ID ' .. target, success = success,
             death = confirm.death, injuries = injuries,
             refresh = function() startDiagnosis(target) end,
         }
-        local chart = lib.callback.await('ptech_mediora_medical:createChart', false, target, injuries, success)
-        local description = MedicalUI.describe(snapshot)
+        -- 保存前の患者・距離確認と、患者側の表示解除はサーバーが行う。
+        local chart = lib.callback.await('ptech_mediora_medical:createChart', false, target)
         if chart and chart.chart then
             if GetResourceState('ptech_mediora_manager') == 'started' then
                 exports.ptech_mediora_manager:openCharts(target, chart.chart.chartId)
@@ -91,11 +107,9 @@ local function startDiagnosis(target)
         else
             MedicalUI.show(snapshot)
         end
-        if Config.Debug then
-            print(('[ptech_mediora_medical] serverId=%s success=%s returnType=%s\n%s')
-                :format(target, tostring(success), type(injuries), description))
-        end
     end)
+    -- 中止・コールバック例外・演出失敗でも、患者向け表示と開始許可を片付ける。
+    if authorizedTarget then pcall(cancelExamination, authorizedTarget) end
     busy = false
     if not ok then
         if Config.Debug then print('[ptech_mediora_medical] ' .. tostring(err)) end
@@ -125,6 +139,12 @@ local function handleCommand(_, args)
 end
 
 RegisterCommand(Config.Commands.Name, handleCommand, false)
+
+-- EMSManager only receives this static catalogue for its treatment screen.
+-- Item ownership and consumption stay on the Medical server when treatment is implemented.
+exports('getTreatmentItems', function()
+    return MedioraItems
+end)
 
 if Config.Target.Enabled then
     exports.ox_target:addGlobalPlayer({

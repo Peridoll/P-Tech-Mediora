@@ -61,14 +61,18 @@ Config = {
   ｜診察の演出。タブレットの見た目とアニメーションは導入先で差し替えられる。
 
   Examination
-  ｜Duration  : 診察にかかる時間（ミリ秒）
+  ｜BaseDuration     : 負傷情報が空の場合の基本時間（ミリ秒）
+  ｜PerPartDuration  : 負傷1部位ごとの追加時間（ミリ秒）
+  ｜MaxDuration      : 診察時間の上限（ミリ秒）
   ｜Label     : 診察中に表示する文言
   ｜Animation : 再生するアニメーション
   ｜Prop      : 手に持つ小物の設定
 
   _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
   Examination = {
-    Duration = 6000,
+    BaseDuration = 1000,
+    PerPartDuration = 1000,
+    MaxDuration = 6000,
     Label    = '診察しています',
 
     Animation = {

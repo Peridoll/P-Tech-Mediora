@@ -7,13 +7,23 @@ let records = [];
 let selectedChartId = null;
 let selectedPatient = null;
 let selectedTreatment = null;
+let selectedTreatmentIndex;
+let treatmentSupplies = [];
+let suppliesAvailable = false;
+let activeTreatmentChart = null;
+let selectedPart = null;
+let chartRequest = 0;
+let supplyRequest = 0;
+let activePage = 'home';
+let patientViewRequest = 0;
 
 const partNames = {
-  head: '頭部', neck: '首', upper_body: '胸部・腹部', lower_body: '腰部', spine: '背中',
+  head: '頭部', upper_body: '上半身', lower_body: '下半身',
   left_arm: '左腕', right_arm: '右腕', left_leg: '左脚', right_leg: '右脚',
-  left_hand: '左手', right_hand: '右手', left_foot: '左足', right_foot: '右足',
 };
 const kindNames = { shot: '銃創', stabbed: '刺創', beat: '打撲', burned: '熱傷' };
+const validLevel = number => Number.isInteger(number) && number >= 0 && number <= 4;
+const severityName = number => validLevel(number) ? (number <= 1 ? '軽度' : number === 2 ? '中度' : '重度') : '未取得';
 
 function post(name, data = {}) {
   if (typeof resource !== 'function') return Promise.resolve({ error: 'NUI resource unavailable' });
@@ -22,8 +32,27 @@ function post(name, data = {}) {
 }
 
 function showPage(page) {
+  if (activePage === 'treatment' && page !== 'treatment') {
+    patientViewRequest++;
+    post('setPatientView', { active: false });
+  }
+  activePage = page;
   Object.entries(pages).forEach(([name, element]) => { element.hidden = name !== page; });
+  tablet.classList.toggle('treatment-mode', page === 'treatment');
   if (page === 'home' || page === 'charts') post('rememberPage', { page });
+}
+
+function patientViewStatus(result = {}) {
+  $('patient-view').classList.toggle('is-live', result.active === true);
+  $('patient-view-status').textContent = result.message || (result.error ? '患者の視点を取得できません。' : 'カルテのみ表示しています。');
+}
+
+async function openPatientView() {
+  const request = ++patientViewRequest;
+  patientViewStatus({ message: '患者を確認しています…' });
+  const result = await post('setPatientView', { active: true });
+  if (request !== patientViewRequest || tablet.hidden || activePage !== 'treatment') return;
+  patientViewStatus(result);
 }
 
 function notice(message = '') {
@@ -47,6 +76,53 @@ function escapeText(text) { return String(text ?? '').replace(/[&<>'"]/g, char =
 function partName(part) { return partNames[part] || String(part || '部位未取得'); }
 function kindName(kind) { return kindNames[kind] || String(kind || '負傷種別未取得'); }
 
+function setTreatmentSupplies(items) {
+  const values = items && typeof items === 'object' ? Object.values(items) : [];
+  treatmentSupplies = values.filter(item => item && typeof item === 'object' && item.treatment && Number.isInteger(item.count) && item.count > 0);
+}
+
+function renderTreatmentSupplies() {
+  const list = $('treatment-supply-list');
+  list.replaceChildren();
+  treatmentSupplies.forEach(supply => {
+    const card = document.createElement('article');
+    const icon = document.createElement('p');
+    const name = document.createElement('strong');
+    const detail = document.createElement('span');
+    const count = document.createElement('b');
+    const lines = String(supply.uiLabel || supply.label || '医療キット').split('\n');
+    card.className = 'treatment-supply';
+    icon.className = 'supply-icon';
+    icon.textContent = lines[0] || '医療キット';
+    name.textContent = lines.slice(1).join(' ') || kindName(supply.treatment);
+    detail.textContent = supply.description || '処置用医療キット';
+    count.className = 'supply-count';
+    count.textContent = '×' + supply.count;
+    card.dataset.item = supply.name;
+    card.append(icon, name, detail, count);
+    list.append(card);
+  });
+  if (!treatmentSupplies.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-detail';
+    empty.textContent = '対応する医療品を所持していません。';
+    list.append(empty);
+  }
+}
+
+async function refreshSupplies() {
+  const ticket = ++supplyRequest;
+  $('supply-notice').textContent = '所持数を確認しています…';
+  const result = await post('getTreatmentSupplies');
+  if (ticket !== supplyRequest || tablet.hidden) return;
+  suppliesAvailable = !result.error;
+  setTreatmentSupplies(result.items);
+  renderTreatmentSupplies();
+  $('supply-notice').textContent = result.error || '所持している医療品の合計数です。';
+  if (result.error) $('treatment-supply-list').replaceChildren();
+  if (selectedTreatment) updateTreatmentSelection(selectedTreatment, selectedTreatmentIndex);
+}
+
 function renderDetail(chart) {
   selectedChartId = chart.chartId;
   const injuries = Array.isArray(chart.injuries) ? chart.injuries : [];
@@ -61,6 +137,10 @@ function renderDetail(chart) {
 function renderCharts(result, preferredChartId) {
   records = Array.isArray(result.charts) ? result.charts : [];
   selectedPatient = result.patient || null;
+  selectedChartId = null;
+  activeTreatmentChart = null;
+  selectedPart = null;
+  selectedTreatment = null;
   $('chart-content').hidden = false;
   $('patient-name').textContent = result.patient?.name || '氏名未取得';
   $('patient-id-label').textContent = 'ID ' + (result.patient?.serverId ?? '—');
@@ -83,49 +163,124 @@ function renderCharts(result, preferredChartId) {
   renderDetail(records.find(chart => chart.chartId === preferredChartId) || records[0]);
 }
 
-function updateTreatmentSelection(injury) {
+function updateTreatmentSelection(injury, index) {
   selectedTreatment = injury || null;
-  document.querySelectorAll('.treatment-injury').forEach(row => row.classList.toggle('selected', row.dataset.part === selectedTreatment?.part));
-  document.querySelectorAll('.body-part').forEach(part => part.classList.toggle('selected', part.dataset.part === selectedTreatment?.part));
+  selectedTreatmentIndex = index;
+  selectedPart = injury?.part || null;
+  $('treatment-part-name').textContent = injury ? partName(injury.part) + 'の詳細' : '負傷を選択';
+  document.querySelectorAll('.body-part').forEach(button => {
+    const selected = button.dataset.part === selectedPart;
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
+  document.querySelectorAll('.treatment-injury').forEach(row => {
+    const selected = Number(row.dataset.index) === index;
+    row.classList.toggle('selected', selected);
+    row.setAttribute('aria-pressed', String(selected));
+  });
   if (!selectedTreatment) {
     $('treatment-selection').innerHTML = '<p class="empty-detail">負傷箇所を選択してください。</p>';
     return;
   }
-  $('treatment-selection').innerHTML = '<p class="detail-label">選択中の負傷</p><h2>' + escapeText(partName(selectedTreatment.part)) + '</h2><p class="detail-status">' + escapeText(kindName(selectedTreatment.kind)) + '　／　重症度 ' + value(selectedTreatment.severity) + '　／　出血 ' + value(selectedTreatment.bleed) + '</p><p class="treatment-pending">対応する医療品・必要数・処置時間は、次の実装で設定します。</p>';
+  const supply = treatmentSupplies.filter(item => item.treatment === injury.kind);
+  const count = suppliesAvailable ? supply.reduce((sum, item) => sum + item.count, 0) : '未取得';
+  $('treatment-selection').innerHTML = '<h2>' + escapeText(partName(injury.part)) + ' · ' + escapeText(kindName(injury.kind)) + '</h2><p class="detail-status">' + (injury.treated === true ? '治療完了' : severityName(injury.severity) + '（' + value(injury.severity) + '）') + '／出血 ' + value(injury.bleed) + '</p><p class="detail-meta">対応する医療品の所持数：' + count + '</p><p class="treatment-pending">処置操作は準備中です。</p>';
 }
 
-function renderTreatment(chart) {
-  const injuries = Array.isArray(chart?.injuries) ? chart.injuries : [];
-  if (!selectedPatient || !injuries.length) return;
-  $('treatment-patient-name').textContent = selectedPatient.name || '氏名未取得';
+function selectTreatmentPart(part) {
+  const injuries = Array.isArray(activeTreatmentChart?.injuries) ? activeTreatmentChart.injuries : [];
+  const rows = injuries.map((injury, index) => ({ injury, index })).filter(row => row.injury.part === part);
+  const first = rows.find(row => row.injury.treated !== true) || rows[0];
+  updateTreatmentSelection(first?.injury, first?.index);
+  $('treatment-injury-list').querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
+}
+
+function renderTreatmentInjuries(injuries) {
   const list = $('treatment-injury-list');
   list.replaceChildren();
-  document.querySelectorAll('.body-part').forEach(part => {
-    const injury = injuries.find(row => row.part === part.dataset.part);
-    part.disabled = !injury;
-    part.classList.toggle('injured', Boolean(injury));
-    part.classList.remove('selected');
-    part.onclick = injury ? () => updateTreatmentSelection(injury) : null;
-  });
-  injuries.forEach(injury => {
+  $('wound-summary').textContent = '未治療 ' + injuries.filter(injury => injury.treated !== true).length + '件 ／ 全 ' + injuries.length + '件';
+  injuries.forEach((injury, index) => {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'treatment-injury';
+    row.dataset.index = index;
     row.dataset.part = injury.part;
-    row.innerHTML = '<b>' + escapeText(partName(injury.part)) + '</b><span>' + escapeText(kindName(injury.kind)) + '　重症度 ' + value(injury.severity) + '</span>';
-    row.addEventListener('click', () => updateTreatmentSelection(injury));
+    row.dataset.status = partStatus([injury]);
+    row.innerHTML = '<b>' + escapeText(partName(injury.part)) + '</b><span class="wound-state">' + (injury.treated === true ? '治療完了' : severityName(injury.severity)) + '</span><span class="wound-kind">' + escapeText(kindName(injury.kind)) + '</span><span class="wound-bleed">出血 ' + value(injury.bleed) + '</span>';
+    row.addEventListener('click', () => updateTreatmentSelection(injury, index));
     list.append(row);
   });
-  updateTreatmentSelection(injuries[0]);
+  if (!injuries.length) list.innerHTML = '<p class="empty-detail">このカルテに負傷情報はありません。</p>';
+}
+
+function partStatus(injuries) {
+  if (!injuries.length) return 'unrelated';
+  const untreated = injuries.filter(injury => injury.treated !== true);
+  if (!untreated.length) return 'treated';
+  const levels = untreated.map(injury => injury.severity).filter(validLevel);
+  if (!levels.length) return 'unknown';
+  const maximum = Math.max(...levels);
+  return maximum <= 1 ? 'mild' : maximum === 2 ? 'moderate' : 'severe';
+}
+
+function renderTreatmentChart(chart) {
+  activeTreatmentChart = chart;
+  selectedChartId = chart.chartId;
+  const injuries = Array.isArray(chart.injuries) ? chart.injuries : [];
+  $('treatment-chart-meta').textContent = formatTime(chart.issuedAt) + ' ／ 担当 ' + (chart.examinerName || '未記録') + '\n' + (chart.death || '状態未取得') + '\n' + (chart.observationStatus || '');
+  document.querySelectorAll('#treatment-chart-list .chart-row').forEach(row => {
+    const selected = row.dataset.chartId === chart.chartId;
+    row.classList.toggle('selected', selected);
+    row.setAttribute('aria-pressed', String(selected));
+  });
+  document.querySelectorAll('.body-part').forEach(part => {
+    const rows = injuries.filter(row => row.part === part.dataset.part);
+    part.disabled = !rows.length;
+    const untreated = rows.filter(row => row.treated !== true);
+    part.dataset.status = untreated.length ? 'injured' : 'unrelated';
+    part.title = partName(part.dataset.part) + '：' + (untreated.length ? '未治療 ' + untreated.length + '件' : rows.length ? '治療完了' : '今回の対象外');
+    part.setAttribute('aria-label', part.title);
+    part.onclick = () => selectTreatmentPart(part.dataset.part);
+  });
+  renderTreatmentInjuries(injuries);
+  selectTreatmentPart(injuries.some(injury => injury.part === selectedPart) ? selectedPart : injuries[0]?.part || null);
+  // Keep the tablet's chart detail in sync when returning from treatment.
+  renderDetail(chart);
+}
+
+function renderTreatment(chart) {
+  if (!selectedPatient || !chart) return;
+  $('treatment-patient-name').textContent = selectedPatient.name || '氏名未取得';
+  $('body-patient-name').textContent = selectedPatient.name || '氏名未取得';
+  $('view-patient-name').textContent = selectedPatient.name || '氏名未取得';
+  $('view-patient-id').textContent = '患者ID ' + (selectedPatient.serverId ?? '—');
+  $('treatment-patient-id').textContent = '患者ID ' + (selectedPatient.serverId ?? '—');
+  const list = $('treatment-chart-list');
+  list.replaceChildren();
+  records.forEach(record => {
+    const row = $('chart-template').content.firstElementChild.cloneNode(true);
+    row.dataset.chartId = record.chartId;
+    row.querySelector('.chart-time').textContent = formatTime(record.issuedAt);
+    row.querySelector('.chart-summary').textContent = injuryText(record);
+    row.querySelector('.chart-examiner').textContent = '担当: ' + (record.examinerName || '未記録');
+    row.addEventListener('click', () => renderTreatmentChart(record));
+    list.append(row);
+  });
+  renderTreatmentSupplies();
+  renderTreatmentChart(chart);
   showPage('treatment');
+  openPatientView();
+  refreshSupplies();
 }
 
 async function search(preferredChartId) {
+  const request = ++chartRequest;
   const targetId = $('patient-id').value.trim();
   if (!/^\d+$/.test(targetId)) { notice('患者IDには数字を入力してください。'); return; }
   notice('カルテを確認しています…');
   $('chart-content').hidden = true;
   const result = await post('getCharts', { targetId });
+  if (request !== chartRequest || tablet.hidden) return;
   if (result.error) { notice(result.error); return; }
   notice('');
   renderCharts(result, preferredChartId);
@@ -134,20 +289,39 @@ async function search(preferredChartId) {
 $('open-charts').addEventListener('click', () => showPage('charts'));
 $('back-home').addEventListener('click', () => showPage('home'));
 $('back-charts').addEventListener('click', () => showPage('charts'));
+$('refresh-supplies').addEventListener('click', refreshSupplies);
 $('close').addEventListener('click', () => post('close'));
 $('chart-search').addEventListener('submit', event => { event.preventDefault(); search(); });
 document.addEventListener('keydown', event => { if (event.key === 'Escape' && !tablet.hidden) post('close'); });
 
 window.addEventListener('message', event => {
   const message = event.data || {};
-  if (message.action === 'close') { tablet.hidden = true; return; }
+  if (message.action === 'close') { tablet.hidden = true; chartRequest++; supplyRequest++; patientViewRequest++; return; }
+  if (message.action === 'patientView:status') {
+    if (!tablet.hidden && activePage === 'treatment') { patientViewRequest++; patientViewStatus(message.data); }
+    return;
+  }
+  if (message.action === 'treatment:supplies') {
+    supplyRequest++;
+    suppliesAvailable = !message.data?.error;
+    setTreatmentSupplies(message.data?.items);
+    renderTreatmentSupplies();
+    $('supply-notice').textContent = message.data?.error || '所持している医療品の合計数です。';
+    if (message.data?.error) $('treatment-supply-list').replaceChildren();
+    if (selectedTreatment) updateTreatmentSelection(selectedTreatment, selectedTreatmentIndex);
+    return;
+  }
   if (message.action !== 'open' || !message.data) return;
   const data = message.data;
+  chartRequest++;
+  supplyRequest++;
   tablet.hidden = false;
   $('title').textContent = data.title || 'EMSManager';
   $('medic-name').textContent = data.medicName || '';
   const path = typeof data.wallpaper === 'string' && /^[a-zA-Z0-9_./-]+$/.test(data.wallpaper) ? data.wallpaper : '';
   $('wallpaper').style.backgroundImage = path ? 'url("' + path + '")' : '';
+  setTreatmentSupplies(data.treatmentItems);
+  suppliesAvailable = false;
   showPage(data.page === 'charts' ? 'charts' : 'home');
   if (data.targetId !== undefined && data.targetId !== null) {
     $('patient-id').value = String(data.targetId);

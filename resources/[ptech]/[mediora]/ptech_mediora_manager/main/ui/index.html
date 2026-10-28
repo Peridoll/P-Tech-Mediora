@@ -45,38 +45,57 @@
       <section id="treatment-page" class="page treatment" hidden>
         <div class="page-heading">
           <button id="back-charts" class="back" type="button">‹ カルテ</button>
-          <h1>治療準備</h1>
+          <h1>患者の治療</h1>
         </div>
-        <p class="treatment-subtitle"><span id="treatment-patient-name">患者未選択</span>のカルテから負傷箇所を選択します。</p>
         <div class="treatment-grid">
-          <section class="body-card" aria-label="負傷部位図">
-            <p class="section-label">負傷部位</p>
-            <div id="body-map" class="body-map" aria-label="人型の部位図">
-              <button type="button" data-part="head" class="body-part head">頭</button>
-              <button type="button" data-part="neck" class="body-part neck">首</button>
-              <button type="button" data-part="upper_body" class="body-part chest">胸部</button>
-              <button type="button" data-part="lower_body" class="body-part abdomen">腹部</button>
-              <button type="button" data-part="spine" class="body-part spine">背中</button>
-              <button type="button" data-part="left_arm" class="body-part left-arm">左腕</button>
-              <button type="button" data-part="right_arm" class="body-part right-arm">右腕</button>
-              <button type="button" data-part="left_hand" class="body-part left-hand">左手</button>
-              <button type="button" data-part="right_hand" class="body-part right-hand">右手</button>
-              <button type="button" data-part="left_leg" class="body-part left-leg">左脚</button>
-              <button type="button" data-part="right_leg" class="body-part right-leg">右脚</button>
-              <button type="button" data-part="left_foot" class="body-part left-foot">左足</button>
-              <button type="button" data-part="right_foot" class="body-part right-foot">右足</button>
+          <div class="treatment-left">
+            <section class="clinical-card treatment-records" aria-labelledby="treatment-records-title">
+              <h2 id="treatment-records-title" class="section-label">カルテ</h2>
+              <div id="treatment-chart-list" class="treatment-chart-list scroll-area"></div>
+              <div class="patient-overview scroll-area">
+                <div class="patient-meta"><p class="section-label">患者情報</p><h2 id="treatment-patient-name">患者未選択</h2><p id="treatment-patient-id" class="detail-meta"></p><div id="treatment-chart-meta" class="detail-meta"></div></div>
+              </div>
+              <div class="body-overview" aria-label="カルテに重ねた負傷部位図">
+                  <div id="body-map" class="body-map compact-map" aria-label="未治療の部位を赤で示す補助図">
+                    <button type="button" data-part="head" class="body-part head">頭</button>
+                    <button type="button" data-part="upper_body" class="body-part upper-body">上半身</button>
+                    <button type="button" data-part="lower_body" class="body-part lower-body">下半身</button>
+                    <button type="button" data-part="left_arm" class="body-part left-arm">左腕</button>
+                    <button type="button" data-part="right_arm" class="body-part right-arm">右腕</button>
+                    <button type="button" data-part="left_leg" class="body-part left-leg">左脚</button>
+                    <button type="button" data-part="right_leg" class="body-part right-leg">右脚</button>
+                  </div>
+                  <p class="body-overview-note"><i></i>赤：未治療の部位</p>
+              </div>
+            </section>
+            <section class="clinical-card supply-panel" aria-labelledby="supply-title">
+              <div class="section-heading"><h2 id="supply-title" class="section-label">所持している医療品</h2><button id="refresh-supplies" class="back" type="button">更新</button></div>
+              <p id="supply-notice" class="supply-note" role="status"></p>
+              <div id="treatment-supply-list" class="treatment-supply-list scroll-area"></div>
+            </section>
+          </div>
+          <section id="patient-view" class="patient-view" aria-label="診察対象の患者本人">
+            <div class="patient-view-heading"><p class="eyebrow">PATIENT VIEW</p><h2 id="view-patient-name">患者未選択</h2><span id="view-patient-id"></span></div>
+            <p id="patient-view-status" class="patient-view-status" role="status">患者を確認しています…</p>
+          </section>
+          <div class="treatment-right">
+          <section class="clinical-card injury-list-card" aria-labelledby="injury-list-title">
+            <div class="section-heading"><h2 id="injury-list-title" class="section-label">要治療箇所</h2><span id="body-patient-name" class="detail-meta"></span></div>
+            <p id="wound-summary" class="supply-note"></p>
+            <div class="scroll-area injury-details">
+              <div id="treatment-injury-list" class="treatment-injury-list"></div>
+              <h3 id="treatment-part-name">負傷を選択</h3>
+              <div id="treatment-selection" class="treatment-selection" aria-live="polite"></div>
             </div>
           </section>
-          <section class="treatment-panel">
-            <p class="section-label">カルテの負傷</p>
-            <div id="treatment-injury-list" class="treatment-injury-list"></div>
-            <div id="treatment-selection" class="treatment-selection">
-              <p class="empty-detail">負傷箇所を選択してください。</p>
-            </div>
-            <button id="start-treatment" class="treatment-action" type="button" disabled>処置を開始する（準備中）</button>
+          <section class="clinical-card treatment-bill" aria-labelledby="used-title">
+            <h2 id="used-title" class="section-label">治療履歴</h2>
+            <div id="treatment-used-items" class="scroll-area"><p class="empty-detail">治療履歴はまだありません。</p></div>
+            <div class="bill-total"><span>治療費合計</span><strong id="treatment-total">0 円</strong></div>
+            <p class="supply-note">処置成功時に使用数と金額を加算します。</p>
           </section>
+          </div>
         </div>
-        <p class="treatment-note">この画面は治療画面の仮置きです。医療品の消費、処置アニメーション、Wasabiへの治療反映はまだ行いません。</p>
       </section>
     </section>
   </main>

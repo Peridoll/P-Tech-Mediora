@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ja">
-<head><meta charset="utf-8"><style>html,body{background:transparent!important}#app[hidden]{display:none!important}</style><meta name="viewport" content="width=device-width,initial-scale=1"><title>PTECH 診察記録</title><link rel="stylesheet" href="style.css"></head>
+<head><meta charset="utf-8"><style>html,body{background:transparent!important}#app[hidden]{display:none!important}</style><meta name="viewport" content="width=device-width,initial-scale=1"><title>PTECH 診察記録</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="examination.css"></head>
 <body>
 <main id="app" hidden>
   <section class="panel" role="dialog" aria-modal="true" aria-labelledby="patient-title">
@@ -15,6 +15,7 @@
     <footer><span class="footer-note"><i></i>取得時点の記録 · 自動更新なし</span><div><button id="manage" class="secondary" hidden>患者の状態を変更</button><button id="refresh" class="primary">再診察する <span>↻</span></button></div></footer>
   </section>
 </main>
+<section id="examination-status" class="examination-status" role="status" hidden>診察されています</section>
 <template id="injury-template"><article class="injury-card"><div class="injury-top"><span class="body-name"></span><span class="kind"></span></div><div class="measure"><span>重症度</span><div class="segments severity-segments"></div><b class="severity-value"></b></div><div class="measure"><span>出血</span><div class="segments bleed-segments"></div><b class="bleed-value"></b></div></article></template>
 <script src="app.js"></script>
 </body></html>

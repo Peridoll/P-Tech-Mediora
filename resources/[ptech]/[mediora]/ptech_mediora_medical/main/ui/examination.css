@@ -1,0 +1,14 @@
+.examination-status {
+  position: fixed;
+  left: 50%;
+  bottom: 12vh;
+  transform: translateX(-50%);
+  z-index: 11;
+  padding: 12px 22px;
+  border: 1px solid #7be8dc88;
+  border-radius: 8px;
+  background: rgba(11, 20, 29, .92);
+  color: #eef8f9;
+  font-size: 16px;
+  pointer-events: none;
+}

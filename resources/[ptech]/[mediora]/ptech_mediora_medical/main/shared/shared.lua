@@ -1,11 +1,21 @@
 Medical = {}
 
+-- Wasabi v1は文字列、導入構成によっては数値・trueでdead State Bagを公開する。
+-- 判定はEscortと揃え、状態そのものは変更しない。
+local function deadState(value)
+    return value == 'dead' or value == 2 or value == true
+end
+
+local function laststandState(value)
+    return value == 'laststand' or value == 1
+end
+
 -- Only copy the known observation schema; never accept patient identity or state from the client.
 function Medical.report(injuries, success)
     local rows = {}
     if success ~= true or type(injuries) ~= 'table' then return { rows = rows, status = '未取得' } end
-    local parts = { 'head', 'neck', 'upper_body', 'lower_body', 'spine', 'left_arm', 'right_arm',
-        'left_leg', 'right_leg', 'left_hand', 'right_hand', 'left_foot', 'right_foot' }
+    -- 導入版WasabiのBonesが割り当てる7部位。手は腕、足先は脚に含まれる。
+    local parts = { 'head', 'upper_body', 'lower_body', 'left_arm', 'right_arm', 'left_leg', 'right_leg' }
     local kinds = { shot = true, stabbed = true, beat = true, burned = true }
     local function level(value)
         if type(value) == 'number' and value == value and value % 1 == 0 and value >= 0 and value <= 4 then return value end
@@ -39,8 +49,8 @@ end
 
 function Medical.death(state, metadata)
     metadata = metadata or {}
-    if state == 'dead' or metadata.isdead == true then return '死亡' end
-    if state == 'laststand' or metadata.inlaststand == true then return '瀕死（laststand）' end
+    if deadState(state) or metadata.isdead == true then return '死亡' end
+    if laststandState(state) or metadata.inlaststand == true then return '瀕死（laststand）' end
     if state == false or (metadata.isdead == false and metadata.inlaststand == false) then
         return '死亡・瀕死フラグなし'
     end
