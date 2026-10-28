@@ -126,6 +126,12 @@ end
 
 RegisterCommand(Config.Commands.Name, handleCommand, false)
 
+-- EMSManager only receives this static catalogue for its treatment screen.
+-- Item ownership and consumption stay on the Medical server when treatment is implemented.
+exports('getTreatmentItems', function()
+    return MedioraItems
+end)
+
 if Config.Target.Enabled then
     exports.ox_target:addGlobalPlayer({
         {

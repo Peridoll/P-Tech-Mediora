@@ -7,6 +7,7 @@ let records = [];
 let selectedChartId = null;
 let selectedPatient = null;
 let selectedTreatment = null;
+let treatmentSupplies = [];
 
 const partNames = {
   head: '頭部', neck: '首', upper_body: '胸部・腹部', lower_body: '腰部', spine: '背中',
@@ -14,6 +15,12 @@ const partNames = {
   left_hand: '左手', right_hand: '右手', left_foot: '左足', right_foot: '右足',
 };
 const kindNames = { shot: '銃創', stabbed: '刺創', beat: '打撲', burned: '熱傷' };
+const fallbackSupplies = [
+  { label: '医療キット：銃創処置', uiLabel: '医療キット\n銃創', description: '銃創の処置に使用する医療キット。', treatment: 'shot' },
+  { label: '医療キット：刺創処置', uiLabel: '医療キット\n刺創', description: '刺創の処置に使用する医療キット。', treatment: 'stabbed' },
+  { label: '医療キット：打撲処置', uiLabel: '医療キット\n打撲', description: '打撲の処置に使用する医療キット。', treatment: 'beat' },
+  { label: '医療キット：熱傷処置', uiLabel: '医療キット\n熱傷', description: '熱傷の処置に使用する医療キット。', treatment: 'burned' },
+];
 
 function post(name, data = {}) {
   if (typeof resource !== 'function') return Promise.resolve({ error: 'NUI resource unavailable' });
@@ -46,6 +53,31 @@ function value(number) { return Number.isInteger(number) ? number + '/4' : '未�
 function escapeText(text) { return String(text ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char])); }
 function partName(part) { return partNames[part] || String(part || '部位未取得'); }
 function kindName(kind) { return kindNames[kind] || String(kind || '負傷種別未取得'); }
+
+function setTreatmentSupplies(items) {
+  const values = items && typeof items === 'object' ? Object.values(items) : [];
+  treatmentSupplies = values.filter(item => item && typeof item === 'object' && item.treatment);
+  if (!treatmentSupplies.length) treatmentSupplies = fallbackSupplies;
+}
+
+function renderTreatmentSupplies() {
+  const list = $('treatment-supply-list');
+  list.replaceChildren();
+  treatmentSupplies.forEach(supply => {
+    const card = document.createElement('article');
+    const icon = document.createElement('p');
+    const name = document.createElement('strong');
+    const detail = document.createElement('span');
+    const lines = String(supply.uiLabel || supply.label || '医療キット').split('\n');
+    card.className = 'treatment-supply';
+    icon.className = 'supply-icon';
+    icon.textContent = lines[0] || '医療キット';
+    name.textContent = lines.slice(1).join(' ') || kindName(supply.treatment);
+    detail.textContent = supply.description || '処置用医療キット';
+    card.append(icon, name, detail);
+    list.append(card);
+  });
+}
 
 function renderDetail(chart) {
   selectedChartId = chart.chartId;
@@ -98,6 +130,7 @@ function renderTreatment(chart) {
   const injuries = Array.isArray(chart?.injuries) ? chart.injuries : [];
   if (!selectedPatient || !injuries.length) return;
   $('treatment-patient-name').textContent = selectedPatient.name || '氏名未取得';
+  renderTreatmentSupplies();
   const list = $('treatment-injury-list');
   list.replaceChildren();
   document.querySelectorAll('.body-part').forEach(part => {
@@ -148,6 +181,7 @@ window.addEventListener('message', event => {
   $('medic-name').textContent = data.medicName || '';
   const path = typeof data.wallpaper === 'string' && /^[a-zA-Z0-9_./-]+$/.test(data.wallpaper) ? data.wallpaper : '';
   $('wallpaper').style.backgroundImage = path ? 'url("' + path + '")' : '';
+  setTreatmentSupplies(data.treatmentItems);
   showPage(data.page === 'charts' ? 'charts' : 'home');
   if (data.targetId !== undefined && data.targetId !== null) {
     $('patient-id').value = String(data.targetId);

@@ -88,9 +88,11 @@ byId('close').addEventListener('click', () => action('close'));
 byId('refresh').addEventListener('click', () => action('refresh'));
 byId('manage').addEventListener('click', () => action('manage'));
 document.addEventListener('keydown', event => { if (event.key === 'Escape' && !app.hidden) action('close'); });
+
 window.addEventListener('message', event => {
-  if (event.data?.action === 'open' && event.data.data) render(event.data.data);
-  if (event.data?.action === 'close') { app.hidden = true; pending = false; }
+  const message = event.data || {};
+  if (message.action === 'open' && message.data) render(message.data);
+  if (message.action === 'close') { app.hidden = true; pending = false; }
 });
 const sample = {
   title: '訓練患者 — 負傷：銃創・打撲', death: '死亡・瀕死フラグなし', training: true, mode: 'ready',

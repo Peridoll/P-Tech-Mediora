@@ -20,14 +20,6 @@ function Marine.busy(state)
         or state.emsVehicleBy ~= nil and state.emsVehicleBy ~= false
 end
 
-function Marine.finsAllowed(job)
-    if not job or job.onduty ~= true then return false end
-    for _, name in ipairs(Config.Fins.Jobs) do
-        if job.name == name then return true end
-    end
-    return false
-end
-
 function Marine.validSurface(coords, observation)
     if type(observation) ~= 'table' or observation.water ~= true then return false end
     for _, key in ipairs({ 'x', 'y', 'z', 'surface' }) do
