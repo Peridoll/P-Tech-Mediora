@@ -167,7 +167,7 @@ local function stopOne(escorter, target, silent)
     elseif GetPlayerPing(target) > 0 then
         Player(target).state:set('emsEscortedBy', nil, true)
         if not silent then
-            TriggerClientEvent('ptech_mediora_escort:client:released', target)
+            TriggerClientEvent('ptech_mediora_escort:client:released', target, info.ticket)
         end
     end
     if GetPlayerPing(escorter) > 0 then
@@ -275,13 +275,14 @@ local function startEscort(src, target, carryType, vehicleSolo, exiting)
     local slot = 1
     escorts[src] = escorts[src] or {}
     if style ~= 'carry' then carryType = nil end
-    escorts[src][target] = { slot = slot, style = style, carryType = carryType }
+    nextNpcTicket = nextNpcTicket + 1
+    local sessionTicket = nextNpcTicket
+    escorts[src][target] = { slot = slot, style = style, carryType = carryType, ticket = sessionTicket }
     escortedBy[target] = src
 
     if target > 0 then
         Player(target).state:set('emsEscortedBy', src, true)
     else
-        nextNpcTicket = nextNpcTicket + 1
         local info = escorts[src][target]
         info.entity, info.ticket = targetPed(target), nextNpcTicket
         npcEntities[target] = info.entity
@@ -292,7 +293,7 @@ local function startEscort(src, target, carryType, vehicleSolo, exiting)
 
     TriggerClientEvent('ptech_mediora_escort:client:addTarget', src, target, countOf(src), carryType)
     if target > 0 then
-        TriggerClientEvent('ptech_mediora_escort:client:getEscorted', target, src, style, slot, carryType)
+        TriggerClientEvent('ptech_mediora_escort:client:getEscorted', target, src, style, slot, carryType, sessionTicket)
     else
         local info = escorts[src][target]
         TriggerClientEvent('ptech_mediora_escort:client:escortNPC', -1, target, src, style, slot, carryType, info.ticket)
@@ -550,10 +551,11 @@ RegisterNetEvent('ptech_mediora_escort:server:stopOne', function(target)
 end)
 
 -- 運ばれている側から「運ぶ人が見つからない」と報告があった場合
-RegisterNetEvent('ptech_mediora_escort:server:lost', function()
+RegisterNetEvent('ptech_mediora_escort:server:lost', function(ticket)
     local src = source
     local escorter = escortedBy[src]
-    if escorter then stopOne(escorter, src) end
+    local info = escorter and escorts[escorter] and escorts[escorter][src]
+    if info and info.ticket == ticket then stopOne(escorter, src) end
 end)
 
 -- 運んでいる人を車に乗せる（空いている座席の数だけ）

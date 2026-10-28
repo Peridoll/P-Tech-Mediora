@@ -5,6 +5,8 @@ local escortingCount = 0
 local escortingOrder = {}   -- 搬送対象の記録（現行仕様では最大1人）
 local escortedBy = nil      -- 自分を運んでいる人のサーバーID
 local escortedGeneration = 0 -- 古い搬送スレッドの再実行を防ぐ
+local escortedTicket = nil   -- 現在の搬送セッション識別子
+local lastEscortedTicket = 0 -- 遅延した旧開始イベントを無視する
 local escortedStyle = nil    -- 'carry'
 local carryingTarget = nil   -- 自分がキャリーしている人のサーバーID
 local carryingType = nil     -- 自分が使用するCarryModesスタイルのID
@@ -688,6 +690,7 @@ end
 local function detachSelf()
     escortedGeneration = escortedGeneration + 1
     escortedBy = nil
+    escortedTicket = nil
     escortedStyle = nil
     escortedCarryType = nil
     local ped = cache.ped
@@ -696,10 +699,13 @@ local function detachSelf()
     SetPedCanRagdoll(ped, true)
 end
 
-RegisterNetEvent('ptech_mediora_escort:client:getEscorted', function(escorter, style, slot, carryType)
+RegisterNetEvent('ptech_mediora_escort:client:getEscorted', function(escorter, style, slot, carryType, ticket)
+    if type(ticket) ~= 'number' or ticket <= lastEscortedTicket then return end
+    lastEscortedTicket = ticket
     if escortedBy and escortedBy ~= escorter then detachSelf() end
     escortedGeneration = escortedGeneration + 1
     local generation = escortedGeneration
+    escortedTicket = ticket
     local ped = cache.ped
     escortedBy = escorter
     escortedStyle = 'carry'
@@ -722,7 +728,7 @@ RegisterNetEvent('ptech_mediora_escort:client:getEscorted', function(escorter, s
     end
     if escortedGeneration ~= generation or escortedBy ~= escorter then return end
     if escorterPed == 0 then
-        TriggerServerEvent('ptech_mediora_escort:server:lost')
+        TriggerServerEvent('ptech_mediora_escort:server:lost', ticket)
         detachSelf()
         return
     end
@@ -775,7 +781,7 @@ RegisterNetEvent('ptech_mediora_escort:client:getEscorted', function(escorter, s
             if esPed == 0 or not DoesEntityExist(esPed) then
                 lostSince = lostSince or GetGameTimer()
                 if GetGameTimer() - lostSince > ((Config.Sync and Config.Sync.Timeout) or 3000) then
-                    TriggerServerEvent('ptech_mediora_escort:server:lost')
+                    TriggerServerEvent('ptech_mediora_escort:server:lost', ticket)
                     detachSelf()
                     break
                 end
@@ -789,8 +795,8 @@ RegisterNetEvent('ptech_mediora_escort:client:getEscorted', function(escorter, s
     end)
 end)
 
-RegisterNetEvent('ptech_mediora_escort:client:released', function()
-    if not escortedBy then return end
+RegisterNetEvent('ptech_mediora_escort:client:released', function(ticket)
+    if not escortedBy or ticket ~= escortedTicket then return end
     detachSelf()
 end)
 
