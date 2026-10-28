@@ -1,6 +1,8 @@
 local status = { eligible = false }
 local syncAt, heldAt, sending = 0, nil, false
 local running, heli, pilot = false, nil, nil
+local stopRequested, activeNetId, pilotNetId = false, nil, nil
+local visibleAircraft = {}
 local function notify(message, kind)
     lib.notify({ title = 'Mediora Rescue', description = message, type = kind or 'inform' })
 end
@@ -22,8 +24,8 @@ local function loadModel(name)
     return HasModelLoaded(hash) and hash or nil
 end
 local function cleanup()
-    if pilot and DoesEntityExist(pilot) then DeleteEntity(pilot) end
-    if heli and DoesEntityExist(heli) then DeleteEntity(heli) end
+    if activeNetId then TriggerServerEvent('ptech_mediora_rescue:finish') end
+    activeNetId, pilotNetId = nil, nil
     pilot, heli = nil, nil
 end
 local function ghost()
@@ -49,23 +51,34 @@ local function roofHeight(pos)
     if hit == 1 and endCoords and endCoords.z > pos.z then return endCoords.z end
     return pos.z
 end
-local function flight()
+local function flight(netId, netPilot)
     if running then return end
     running = true
+    stopRequested = false
+    activeNetId, pilotNetId = netId, netPilot
     local ped = PlayerPedId()
     local start = GetEntityCoords(ped)
     local cfg = Config.Helicopter
-    local vehicleModel, pilotModel = loadModel(cfg.Model), loadModel(cfg.Pilot)
-    if not vehicleModel or not pilotModel then notify('回収機を読み込めませんでした', 'error'); running = false; return end
-    local spawnZ = roofHeight(start) + cfg.HoverOffset
-    heli = CreateVehicle(vehicleModel, start.x, start.y, spawnZ, GetEntityHeading(ped), false, false)
-    if not heli or heli == 0 then notify('回収機の生成に失敗しました', 'error'); running = false; return end
-    SetEntityAsMissionEntity(heli, true, true)
-    SetEntityAlpha(heli, cfg.Transparency, false)
+    local timeout = GetGameTimer() + 10000
+    repeat
+        heli = NetworkGetEntityFromNetworkId(netId)
+        pilot = NetworkGetEntityFromNetworkId(netPilot)
+        if heli ~= 0 and pilot ~= 0 and DoesEntityExist(heli) and DoesEntityExist(pilot) then break end
+        Wait(100)
+    until GetGameTimer() >= timeout
+    if heli == 0 or pilot == 0 or not DoesEntityExist(heli) or not DoesEntityExist(pilot) then
+        notify('同期ヘリを取得できません', 'error')
+        cleanup(); running = false; return
+    end
+    local spawnZ = GetEntityCoords(heli).z
     SetVehicleEngineOn(heli, true, true, false)
-    pilot = CreatePedInsideVehicle(heli, 4, pilotModel, -1, false, false)
-    SetModelAsNoLongerNeeded(vehicleModel); SetModelAsNoLongerNeeded(pilotModel)
-    if not pilot or pilot == 0 then cleanup(); running = false; return end
+    TaskWarpPedIntoVehicle(pilot, heli, -1)
+    local pilotDeadline = GetGameTimer() + 3000
+    while GetVehiclePedIsIn(pilot, false) ~= heli and GetGameTimer() < pilotDeadline do Wait(50) end
+    if GetVehiclePedIsIn(pilot, false) ~= heli then
+        notify('パイロットが搭乗できません', 'error')
+        cleanup(); running = false; return
+    end
     ghost()
     -- 1秒回収: GTA標準ロープは屋内・地下への長距離描画に制限があるため、
     -- 現段階ではロープの視覚演出を保証せず、1秒後の搭乗処理を優先する。
@@ -74,7 +87,7 @@ local function flight()
         Wait(0); ghost()
     end
     -- ダウン状態を変更せず、ヘリの空席へ配置する。
-    if not Rescue.down(LocalPlayer.state, {}) and not IsEntityDead(ped) then cleanup(); running = false; return end
+    if stopRequested or ped ~= PlayerPedId() or (not Rescue.down(LocalPlayer.state, {}) and not IsEntityDead(ped)) then cleanup(); running = false; return end
     SetPedIntoVehicle(ped, heli, 0)
     if not IsPedInVehicle(ped, heli, false) then
         notify('ヘリへの搭乗に失敗しました', 'error')
@@ -96,7 +109,8 @@ local function flight()
     local near = false
     while GetGameTimer() - started < cfg.MaxFlightSeconds * 1000 do
         Wait(100)
-        if not DoesEntityExist(heli) or not DoesEntityExist(pilot) then break end
+        if stopRequested or ped ~= PlayerPedId() or not DoesEntityExist(heli) or not DoesEntityExist(pilot)
+            or not IsPedInVehicle(ped, heli, false) then break end
         ghost()
         local here = GetEntityCoords(heli)
         if #(here - vector3(target.x, target.y, here.z)) < 35.0 then near = true; break end
@@ -111,10 +125,14 @@ local function flight()
         -- 接近してから着陸指示。失敗した場合は病院周辺でのみ最終搬送。
         TaskHeliMission(pilot, heli, 0, 0, target.x, target.y, target.z, 20, 12.0, 8.0, target.w, -1, -1, -1.0, 0)
         local landingEnd = GetGameTimer() + cfg.LandingTimeout * 1000
-        while GetGameTimer() < landingEnd and DoesEntityExist(heli) do
+        while GetGameTimer() < landingEnd and not stopRequested and DoesEntityExist(heli)
+            and IsPedInVehicle(ped, heli, false) do
             Wait(100); ghost()
             if GetEntityHeightAboveGround(heli) < 1.8 and #(GetEntityCoords(heli) - vector3(target.x, target.y, target.z)) < 15.0 then landed = true; break end
         end
+    end
+    if stopRequested or ped ~= PlayerPedId() or (not Rescue.down(LocalPlayer.state, {}) and not IsEntityDead(ped)) then
+        cleanup(); running = false; return
     end
     if near then
         if not landed then notify('着陸が安定せず、病院入口へ搬送します', 'warning') end
@@ -136,9 +154,15 @@ local function flight()
     end
     cleanup(); running = false
 end
-RegisterNetEvent('ptech_mediora_rescue:dispatch', function()
+RegisterNetEvent('ptech_mediora_rescue:dispatch', function(netId, netPilot)
     if source ~= 65535 or running then return end
-    CreateThread(flight)
+    CreateThread(function()
+        local ok, err = xpcall(function() flight(netId, netPilot) end, debug.traceback)
+        if not ok then
+            print('[ptech_mediora_rescue] 搬送処理エラー: '..tostring(err))
+            cleanup(); running = false
+        end
+    end)
 end)
 RegisterNetEvent('ptech_mediora_rescue:emsNotify', function(stage)
     if source ~= 65535 then return end
@@ -179,5 +203,40 @@ CreateThread(function()
     end
 end)
 AddEventHandler('onResourceStop', function(resource)
-    if resource == GetCurrentResourceName() then cleanup() end
+    if resource == GetCurrentResourceName() then stopRequested = true; cleanup(); running = false end
+end)
+
+-- サーバー管理のネットワーク機体を公開前は他人から隠す。
+-- スナップショット受信とエンティティのstream-in遅延による一瞬の露出は実機確認事項。
+CreateThread(function()
+    while true do
+        local ok, entries = pcall(lib.callback.await, 'ptech_mediora_rescue:aircraftSnapshot', false)
+        if ok and type(entries) == 'table' then visibleAircraft = entries end
+        Wait(1000)
+    end
+end)
+CreateThread(function()
+    while true do
+        if #visibleAircraft == 0 then Wait(250) else
+            local own = GetPlayerServerId(PlayerId())
+            for _, entry in ipairs(visibleAircraft) do
+                for _, net in ipairs({ entry.heli, entry.pilot }) do
+                    local entity = NetworkGetEntityFromNetworkId(net)
+                    if entity ~= 0 and DoesEntityExist(entity) then
+                        SetEntityCollision(entity, false, false)
+                        SetEntityCompletelyDisableCollision(entity, true, false)
+                        SetEntityInvincible(entity, true)
+                        if not entry.published and entry.owner ~= own then
+                            SetEntityLocallyInvisible(entity)
+                        elseif not entry.published then
+                            SetEntityAlpha(entity, Config.Helicopter.Transparency, false)
+                        else
+                            ResetEntityAlpha(entity)
+                        end
+                    end
+                end
+            end
+            Wait(0)
+        end
+    end
 end)

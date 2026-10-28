@@ -1,5 +1,12 @@
 -- 要請の正当性・重複・死亡セッションをサーバー側で管理する。
-local sessions, lastRequest = {}, {}
+local sessions, lastRequest, aircraft = {}, {}, {}
+local function removeAircraft(src)
+    local a = aircraft[src]
+    if not a then return end
+    aircraft[src] = nil
+    if a.pilot and DoesEntityExist(a.pilot) then DeleteEntity(a.pilot) end
+    if a.heli and DoesEntityExist(a.heli) then DeleteEntity(a.heli) end
+end
 local function data(src)
     local p = exports.qbx_core:GetPlayer(src)
     return p and p.PlayerData
@@ -31,18 +38,35 @@ lib.callback.register('ptech_mediora_rescue:request', function(src)
     lastRequest[src] = now
     local s = session(src)
     if not s or s.used or Rescue.remaining(s.started, now) > 0 then return false end
-    s.used, s.phase = true, 'requested'
-    -- 要請者だけが受信する。演出entityはネットワーク共有しない。
-    TriggerClientEvent('ptech_mediora_rescue:dispatch', src)
+    local ped = GetPlayerPed(src)
+    local bucket = GetPlayerRoutingBucket(src)
+    local coords = GetEntityCoords(ped)
+    local heli = CreateVehicleServerSetter(joaat(Config.Helicopter.Model), 'heli', coords.x, coords.y, coords.z + Config.Helicopter.HoverOffset, GetEntityHeading(ped))
+    if not heli or heli == 0 or not DoesEntityExist(heli) then return false end
+    SetEntityOrphanMode(heli, 2)
+    SetEntityRoutingBucket(heli, bucket)
+    local pilot = CreatePed(4, joaat(Config.Helicopter.Pilot), coords.x, coords.y, coords.z + Config.Helicopter.HoverOffset, GetEntityHeading(ped), true, true)
+    if not pilot or pilot == 0 or not DoesEntityExist(pilot) then DeleteEntity(heli); return false end
+    SetEntityRoutingBucket(pilot, bucket)
+    SetEntityOrphanMode(pilot, 2)
+    s.used, s.phase, s.requestedAt, s.ped, s.bucket = true, 'requested', now, ped, bucket
+    aircraft[src] = { heli = heli, pilot = pilot, created = now, bucket = bucket }
+    TriggerClientEvent('ptech_mediora_rescue:dispatch', src, NetworkGetNetworkIdFromEntity(heli), NetworkGetNetworkIdFromEntity(pilot))
     return true
 end)
 -- 完了通知はクライアントから受けても、サーバー上の予約状態と死亡を再確認する。
 RegisterNetEvent('ptech_mediora_rescue:phase', function(phase)
     local src = source
     local s = sessions[src]
-    if not s or not s.used or not valid(src) then return end
+    local ok, d = valid(src)
+    if not s or not s.used or not ok or s.id ~= d.citizenid or s.ped ~= GetPlayerPed(src)
+        or s.bucket ~= GetPlayerRoutingBucket(src) or s.phase == 'invalid' then return end
     if phase == 'transporting' and s.phase == 'requested' then
-        s.phase = 'transporting'
+        if GetGameTimer() - s.requestedAt < Config.Helicopter.PickupSeconds * 1000
+            or GetGameTimer() - s.requestedAt > 15000 then return end
+        local a = aircraft[src]
+        if not a or GetVehiclePedIsIn(s.ped) ~= a.heli then return end
+        s.phase, s.transportAt = 'transporting', GetGameTimer()
         for _, id in ipairs(GetPlayers()) do
             local target = tonumber(id)
             local ed = data(target)
@@ -51,6 +75,10 @@ RegisterNetEvent('ptech_mediora_rescue:phase', function(phase)
             end
         end
     elseif phase == 'arrived' and s.phase == 'transporting' then
+        if GetGameTimer() - (s.transportAt or 0) < 1000 then return end
+        local coords, dest = GetEntityCoords(s.ped), Config.Hospital.Entrance
+        local dx, dy, dz = coords.x-dest.x, coords.y-dest.y, coords.z-dest.z
+        if dx*dx + dy*dy + dz*dz > 625 then return end
         s.phase = 'arrived'
         for _, id in ipairs(GetPlayers()) do
             local target = tonumber(id)
@@ -70,15 +98,52 @@ CreateThread(function()
             if src then
                 online[src] = true
                 if not valid(src) then
+                    removeAircraft(src)
                     sessions[src] = nil
                 else
-                    session(src)
+                    local current = session(src)
+                    if current and current.used and (current.ped ~= GetPlayerPed(src)
+                        or current.bucket ~= GetPlayerRoutingBucket(src)) then
+                        current.phase = 'invalid'; removeAircraft(src)
+                    end
                 end
             end
         end
-        for src in pairs(sessions) do if not online[src] then sessions[src] = nil end end
+        for src in pairs(sessions) do if not online[src] then removeAircraft(src); sessions[src] = nil end end
     end
 end)
 AddEventHandler('playerDropped', function()
+    removeAircraft(source)
     sessions[source], lastRequest[source] = nil, nil
+end)
+lib.callback.register('ptech_mediora_rescue:aircraftSnapshot', function(src)
+    local result = {}
+    local bucket = GetPlayerRoutingBucket(src)
+    for owner, a in pairs(aircraft) do
+        if a.bucket == bucket and DoesEntityExist(a.heli) and DoesEntityExist(a.pilot) then
+            result[#result + 1] = { heli = NetworkGetNetworkIdFromEntity(a.heli), pilot = NetworkGetNetworkIdFromEntity(a.pilot), owner = owner,
+                published = GetGameTimer() - a.created >= Config.Helicopter.PublishAfter * 1000 }
+        end
+    end
+    return result
+end)
+RegisterNetEvent('ptech_mediora_rescue:finish', function()
+    local src = source
+    local s = sessions[src]
+    if not s or not s.used or s.phase == 'invalid' then return end
+    removeAircraft(src)
+end)
+AddEventHandler('onResourceStop', function(name)
+    if name ~= GetCurrentResourceName() then return end
+    for src in pairs(aircraft) do removeAircraft(src) end
+end)
+CreateThread(function()
+    while true do
+        Wait(1000)
+        for src, a in pairs(aircraft) do
+            if GetGameTimer() - a.created > (Config.Helicopter.MaxFlightSeconds + Config.Helicopter.LandingTimeout + 30) * 1000 then
+                removeAircraft(src)
+            end
+        end
+    end
 end)
