@@ -1,6 +1,6 @@
 -- Canonical item data. Treatment effects are descriptive until integration is added.
 Config.Items = {
-    ['ptech_medical_defib'] = {
+    ['ptech_medical_defibrillator'] = {
         label = 'AED', englishLabel = 'AED', description = '患者の蘇生に使用する',
         weight = 1500, stack = false, buyPrice = nil, sellPrice = nil,
         effect = { type = 'revive' },
