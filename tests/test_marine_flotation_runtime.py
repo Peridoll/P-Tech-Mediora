@@ -82,6 +82,24 @@ class MarineFlotationRuntimeTests(unittest.TestCase):
         assert(sent[#sent].id == -1)
         ''')
 
+    def test_accepts_numeric_and_boolean_wasabi_dead_states(self):
+        self.lua.execute('''
+        players[1].state.dead=1
+        players[1].data.metadata.isdead=false
+        assert(Medical.down(players[1].state, players[1].data.metadata))
+        assert(Medical.death(players[1].state.dead, players[1].data.metadata) == '瀕死（laststand）')
+        assert(activate(1))
+        ''')
+
+        self.setUp()
+        self.lua.execute('''
+        players[1].state.dead=true
+        players[1].data.metadata.isdead=false
+        assert(Medical.down(players[1].state, players[1].data.metadata))
+        assert(Medical.death(players[1].state.dead, players[1].data.metadata) == '死亡')
+        assert(activate(1))
+        ''')
+
     def test_rejects_alive_escorted_or_invalid_water_observation(self):
         self.lua.execute('players[1].state.dead=false; players[1].data.metadata.isdead=false; assert(not activate(1))')
 

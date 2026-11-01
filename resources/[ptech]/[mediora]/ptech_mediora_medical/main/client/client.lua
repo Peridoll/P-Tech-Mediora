@@ -1,4 +1,9 @@
-local busy = false
+local activeExamination
+
+-- 患者向けの表示だけを更新する。操作権や死亡・負傷状態は変更しない。
+RegisterNetEvent('ptech_mediora_medical:examinationStatus', function(active)
+    MedicalNuiSend('clinical', { action = 'examination:status', data = { active = active == true } })
+end)
 
 local function notify(message, kind)
     lib.notify({ title = '診察', description = message, type = kind or 'error' })
@@ -31,22 +36,61 @@ local function cancelExamination(target)
     lib.callback.await('ptech_mediora_medical:cancel', false, target)
 end
 
+local function cancelActiveExamination()
+    local examination = activeExamination
+    activeExamination = nil
+    if examination then
+        if examination.progressing and lib.progressActive() then lib.cancelProgress() end
+        if examination.target then
+            TriggerServerEvent('ptech_mediora_medical:cancelExamination', examination.target)
+        end
+    end
+    MedicalNuiSend('clinical', { action = 'examination:status', data = { active = false } })
+end
+
+AddEventHandler('QBCore:Client:OnPlayerUnload', cancelActiveExamination)
+
 -- This is the single entrance for commands and ox_target. Never trust this
--- target alone: the server checks job, duty, target, range, and bucket twice.
+-- target alone: the server checks permissions, identity and range at each stage.
 local function startDiagnosis(target)
-    if busy then return end
-    busy = true
+    if activeExamination then return end
+    local examination = {}
+    activeExamination = examination
+    local authorizedTarget
     local ok, err = pcall(function()
         if not Medical.allowed(exports.qbx_core:GetPlayerData()) then
             notify('勤務中の医療職のみ利用できます'); return
         end
         if not target then target = nearby() end
         if not target then notify(('%.1fm以内に対象がいません'):format(Config.Distance)); return end
+        examination.target = target
         local auth = lib.callback.await('ptech_mediora_medical:inspect', false, target)
+        if activeExamination ~= examination then return end
         if not auth or auth.error then notify(auth and auth.error or '診察許可を取得できません'); return end
+        authorizedTarget = target
 
+        -- 先に観察し、部位数からサーバーが演出時間を決める。取得失敗を無傷と混同しない。
+        local success, injuries = pcall(function()
+            return exports.wasabi_ambulance:diagnosePlayer(target)
+        end)
+        if activeExamination ~= examination then return end
+        if Config.Debug then
+            print(('[ptech_mediora_medical] serverId=%s success=%s returnType=%s\n%s')
+                :format(target, tostring(success), type(injuries), Medical.describe(injuries)))
+        end
+        local confirm = lib.callback.await('ptech_mediora_medical:confirm', false, target, injuries, success)
+        if activeExamination ~= examination then return end
+        if not confirm or confirm.error then
+            notify(confirm and confirm.error or '診察情報を確認できません'); return
+        end
+        if Config.Debug then
+            print(('[ptech_mediora_medical] serverId=%s examinationDuration=%sms')
+                :format(target, tostring(confirm.duration)))
+        end
+
+        examination.progressing = true
         local finished = lib.progressCircle({
-            duration = Config.Examination.Duration,
+            duration = confirm.duration,
             label = Config.Examination.Label,
             position = 'bottom',
             canCancel = true,
@@ -55,29 +99,31 @@ local function startDiagnosis(target)
             anim = Config.Examination.Animation,
             prop = Config.Examination.Prop,
         })
+        examination.progressing = false
+        if activeExamination ~= examination then return end
         if not finished then
-            cancelExamination(target)
             notify('診察を中止しました', 'inform')
             return
         end
-
-        -- The patient can move, disconnect, or change buckets during the animation.
-        local confirm = lib.callback.await('ptech_mediora_medical:confirm', false, target)
-        if not confirm or confirm.error then notify(confirm and confirm.error or '対象を再確認できません'); return end
-        local success, injuries = pcall(function()
-            return exports.wasabi_ambulance:diagnosePlayer(target)
-        end)
 
         local snapshot = {
             title = '診察 — ID ' .. target, success = success,
             death = confirm.death, injuries = injuries,
             refresh = function() startDiagnosis(target) end,
         }
-        local chart = lib.callback.await('ptech_mediora_medical:createChart', false, target, injuries, success)
-        local description = MedicalUI.describe(snapshot)
+        -- 保存前の患者・距離確認と、患者側の表示解除はサーバーが行う。
+        local chart = lib.callback.await('ptech_mediora_medical:createChart', false, target)
+        if activeExamination ~= examination then return end
         if chart and chart.chart then
             if GetResourceState('ptech_mediora_manager') == 'started' then
-                exports.ptech_mediora_manager:openCharts(target, chart.chart.chartId)
+                local shown, opened = pcall(function()
+                    return exports.ptech_mediora_manager:openCharts(target, chart.chart.chartId)
+                end)
+                if activeExamination ~= examination then return end
+                if not shown or opened == false then
+                    MedicalUI.show(snapshot)
+                    notify('EMSManagerを開けなかったため、簡易結果画面を表示しています', 'inform')
+                end
             else
                 MedicalUI.show(snapshot)
                 notify('EMSManagerが未起動のため、簡易結果画面を表示しています', 'inform')
@@ -91,13 +137,14 @@ local function startDiagnosis(target)
         else
             MedicalUI.show(snapshot)
         end
-        if Config.Debug then
-            print(('[ptech_mediora_medical] serverId=%s success=%s returnType=%s\n%s')
-                :format(target, tostring(success), type(injuries), description))
-        end
     end)
-    busy = false
-    if not ok then
+    -- 中止・コールバック例外・演出失敗でも、患者向け表示と開始許可を片付ける。
+    local current = activeExamination == examination
+    if current then
+        if authorizedTarget then pcall(cancelExamination, authorizedTarget) end
+        if activeExamination == examination then activeExamination = nil end
+    end
+    if not ok and current then
         if Config.Debug then print('[ptech_mediora_medical] ' .. tostring(err)) end
         notify('診察に失敗しました。依存リソースの起動を確認してください')
     end
@@ -126,10 +173,10 @@ end
 
 RegisterCommand(Config.Commands.Name, handleCommand, false)
 
--- EMSManager only receives this static catalogue for its treatment screen.
--- Item ownership and consumption stay on the Medical server when treatment is implemented.
+-- 仮アイテムは廃止。Logiのアイテムを取り込むまでは空のカタログを返す。
+-- EMSManagerの一覧取得口は残すが、Logiへの依存・自動取り込みはまだ追加しない。
 exports('getTreatmentItems', function()
-    return MedioraItems
+    return {}
 end)
 
 if Config.Target.Enabled then
@@ -140,7 +187,7 @@ if Config.Target.Enabled then
             label = Config.Target.Label,
             distance = math.min(Config.Target.Distance, Config.Distance),
             canInteract = function(entity)
-                return not busy and serverIdFromPed(entity) ~= nil
+                return not activeExamination and serverIdFromPed(entity) ~= nil
                     and Medical.allowed(exports.qbx_core:GetPlayerData())
             end,
             onSelect = function(data)
@@ -154,7 +201,7 @@ if Config.Target.Enabled then
             label = '治療する',
             distance = math.min(Config.Target.Distance, Config.Distance),
             canInteract = function(entity)
-                return not busy and serverIdFromPed(entity) ~= nil
+                return not activeExamination and serverIdFromPed(entity) ~= nil
                     and Medical.allowed(exports.qbx_core:GetPlayerData())
             end,
             onSelect = function(data)
@@ -171,7 +218,9 @@ if Config.Target.Enabled then
 end
 
 AddEventHandler('onResourceStop', function(resource)
-    if resource == GetCurrentResourceName() and Config.Target.Enabled then
+    if resource ~= GetCurrentResourceName() then return end
+    cancelActiveExamination()
+    if Config.Target.Enabled then
         exports.ox_target:removeGlobalPlayer('ptech_mediora_medical:diagnose')
         exports.ox_target:removeGlobalPlayer('ptech_mediora_medical:treat')
     end

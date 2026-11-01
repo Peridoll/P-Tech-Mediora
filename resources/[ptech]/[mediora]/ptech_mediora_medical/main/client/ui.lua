@@ -1,9 +1,8 @@
 MedicalUI = {}
 local current
 local bodyNames = {
-    head = '頭部', neck = '首', upper_body = '胸部・腹部', lower_body = '腰部',
-    spine = '背中', left_arm = '左腕', right_arm = '右腕', left_leg = '左脚', right_leg = '右脚',
-    left_hand = '左手', right_hand = '右手', left_foot = '左足', right_foot = '右足',
+    head = '頭部', upper_body = '上半身', lower_body = '下半身',
+    left_arm = '左腕', right_arm = '右腕', left_leg = '左脚', right_leg = '右脚',
 }
 local types = { shot = '銃創', stabbed = '刺創', beat = '打撲', burned = '熱傷' }
 

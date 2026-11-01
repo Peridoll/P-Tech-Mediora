@@ -91,12 +91,13 @@ document.addEventListener('keydown', event => { if (event.key === 'Escape' && !a
 
 window.addEventListener('message', event => {
   const message = event.data || {};
+  if (message.action === 'examination:status') byId('examination-status').hidden = message.data?.active !== true;
   if (message.action === 'open' && message.data) render(message.data);
   if (message.action === 'close') { app.hidden = true; pending = false; }
 });
 const sample = {
   title: '訓練患者 — 負傷：銃創・打撲', death: '死亡・瀕死フラグなし', training: true, mode: 'ready',
-  injuries: [{ body: '左腕', kind: '銃創', severity: 2, bleed: 1 }, { body: '胸部・腹部', kind: '打撲', severity: 1, bleed: 0 }],
+  injuries: [{ body: '左腕', kind: '銃創', severity: 2, bleed: 1 }, { body: '上半身', kind: '打撲', severity: 1, bleed: 0 }],
   details: 'injuries.left_arm.type: shot\ninjuries.left_arm.data.level: 2\ninjuries.left_arm.data.bleed: 1', canRefresh: true, canManage: true,
 };
 if (preview) { document.body.classList.add('preview-background'); render(sample); }
