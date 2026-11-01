@@ -74,10 +74,11 @@ lib.callback.register('ptech_mediora_medical:inspect', function(src, target)
     local result = inspect(src, target)
     if not result.error then
         local exam = { target = target, time = now,
-            patientId = exports.qbx_core:GetPlayer(target).PlayerData.citizenid }
+            patientId = exports.qbx_core:GetPlayer(target).PlayerData.citizenid,
+            medicId = exports.qbx_core:GetPlayer(src).PlayerData.citizenid }
         examinations[src] = exam
         SetTimeout(30000, function()
-            if examinations[src] == exam then endExamination(src) end
+            if examinations[src] == exam and not exam.startedAt then endExamination(src) end
         end)
     end
     return result
@@ -91,9 +92,11 @@ lib.callback.register('ptech_mediora_medical:confirm', function(src, target, inj
     end
     local result = inspect(src, target)
     local patient = exports.qbx_core:GetPlayer(target)
-    if result.error or not patient or patient.PlayerData.citizenid ~= exam.patientId then
+    local medic = exports.qbx_core:GetPlayer(src)
+    if result.error or not patient or not medic or medic.PlayerData.citizenid ~= exam.medicId
+        or patient.PlayerData.citizenid ~= exam.patientId then
         endExamination(src)
-        return { error = result.error or '対象患者が変わりました' }
+        return { error = result.error or '診察者または対象患者が変わりました' }
     end
     local observation = Medical.report(injuries, success)
     if success ~= true or type(injuries) ~= 'table' then
@@ -123,6 +126,13 @@ lib.callback.register('ptech_mediora_medical:cancel', function(src, target)
     return true
 end)
 
+-- ログアウト・リソース停止時は、応答待ちをせず自分の診察だけを取り消す。
+RegisterNetEvent('ptech_mediora_medical:cancelExamination', function(target)
+    local src = source
+    local exam = examinations[src]
+    if exam and exam.target == target then endExamination(src) end
+end)
+
 AddEventHandler('playerDropped', function()
     local dropped = source
     last[dropped] = nil
@@ -138,20 +148,23 @@ end)
 -- on-duty medics during this server run and is cleared when the resource stops.
 lib.callback.register('ptech_mediora_medical:createChart', function(src, target)
     local exam = examinations[src]
-    if not exam or exam.target ~= target or not exam.startedAt or GetGameTimer() - exam.time > 30000 then
+    if not exam or exam.target ~= target or not exam.startedAt
+        or GetGameTimer() - exam.startedAt > exam.duration + 2000 then
         return { error = '診察記録が期限切れです。もう一度診察してください' }
     end
     endExamination(src) -- 成功・失敗ともに1回限り。患者の診察中表示も解除する。
     if GetGameTimer() - exam.startedAt < exam.duration then return { error = '診察が完了していません' } end
     local result = inspect(src, target)
     if result.error then return result end
+    local medic, patient = exports.qbx_core:GetPlayer(src), exports.qbx_core:GetPlayer(target)
+    if not medic or not patient then return { error = '患者情報を取得できません' } end
+    if medic.PlayerData.citizenid ~= exam.medicId or patient.PlayerData.citizenid ~= exam.patientId then
+        return { error = '診察者または対象患者が変わりました' }
+    end
     local observation = exam.observation
     if #observation.rows == 0 then
         return { noChart = true, message = '確認できる負傷情報がないため、カルテは作成しませんでした' }
     end
-    local medic, patient = exports.qbx_core:GetPlayer(src), exports.qbx_core:GetPlayer(target)
-    if not medic or not patient then return { error = '患者情報を取得できません' } end
-    if patient.PlayerData.citizenid ~= exam.patientId then return { error = '対象患者が変わりました' } end
     chartSequence = chartSequence + 1
     local id = ('%s-%s-%s'):format(os.time(), src, chartSequence)
     local chart = {
