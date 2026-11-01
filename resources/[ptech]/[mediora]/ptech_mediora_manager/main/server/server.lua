@@ -1,2 +1,0 @@
--- EMSManager intentionally does not store charts. Medical owns the process-local
--- chart data and checks all access on its server-side callbacks.
