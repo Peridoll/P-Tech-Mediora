@@ -1,5 +1,9 @@
 Medical = {}
 
+function Medical.validId(value)
+    return type(value) == 'number' and value == value and value > 0 and value < math.huge and value % 1 == 0
+end
+
 -- Wasabi v1は文字列、導入構成によっては数値・trueでdead State Bagを公開する。
 -- 判定はEscortと揃え、状態そのものは変更しない。
 local function deadState(value)

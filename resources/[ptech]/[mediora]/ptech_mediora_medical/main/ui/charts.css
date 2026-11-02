@@ -1,0 +1,46 @@
+#chart-app {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: rgba(3, 10, 15, .48);
+}
+.chart-panel { width: min(1120px, 100%); }
+.chart-content { padding: 24px 30px; overflow: auto; min-height: 0; }
+.chart-search { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+.chart-search label { font-size: 13px; }
+.chart-search input {
+  width: 160px;
+  padding: 11px 12px;
+  border: 1px solid #40535f;
+  border-radius: 8px;
+  background: #0d161d;
+  color: var(--text);
+  font: inherit;
+}
+.chart-search input:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.chart-columns { display: grid; grid-template-columns: minmax(210px, 1fr) minmax(0, 2fr); gap: 24px; margin-top: 22px; }
+.chart-list { display: grid; gap: 8px; max-height: 360px; overflow-y: auto; margin-top: 14px; padding: 3px; }
+.chart-choice {
+  width: 100%;
+  text-align: left;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--card);
+}
+.chart-choice:hover, .chart-choice[aria-pressed="true"] { border-color: var(--teal); background: #203b3b; }
+.chart-choice span { display: block; margin-top: 7px; color: var(--muted); font-size: 12px; }
+.chart-choice, #chart-patient-name, .chart-detail p { overflow-wrap: anywhere; }
+.chart-detail { min-width: 0; }
+.chart-detail > p { font-size: 13px; line-height: 1.7; }
+#chart-injuries { margin-top: 18px; grid-template-columns: 1fr; }
+@media (max-width: 720px) {
+  #chart-app { padding: 10px; }
+  .chart-content { padding: 18px; }
+  .chart-columns { grid-template-columns: minmax(0, 1fr); }
+  .chart-list { max-height: 180px; }
+}

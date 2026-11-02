@@ -105,7 +105,7 @@ lib.callback.register('ptech_mediora_medical:confirm', function(src, target, inj
     end
     if next(injuries) ~= nil and #observation.rows == 0 then
         endExamination(src)
-        return { error = '負傷情報の形式に対応していません' }
+        return { error = '負傷情報の形式に対応していません', code = 'unsupported_injuries' }
     end
     local settings = Config.Examination
     exam.duration = math.min(settings.BaseDuration + #observation.rows * settings.PerPartDuration, settings.MaxDuration)

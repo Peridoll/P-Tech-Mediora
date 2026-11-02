@@ -81,6 +81,13 @@ local function startDiagnosis(target)
         local confirm = lib.callback.await('ptech_mediora_medical:confirm', false, target, injuries, success)
         if activeExamination ~= examination then return end
         if not confirm or confirm.error then
+            if confirm and confirm.code == 'unsupported_injuries' then
+                MedicalUI.show({
+                    title = '診察 — ID ' .. target, targetId = target,
+                    success = success, injuries = injuries, death = auth.death, mode = 'unsupported',
+                    refresh = function() startDiagnosis(target) end,
+                })
+            end
             notify(confirm and confirm.error or '診察情報を確認できません'); return
         end
         if Config.Debug then
@@ -107,7 +114,7 @@ local function startDiagnosis(target)
         end
 
         local snapshot = {
-            title = '診察 — ID ' .. target, success = success,
+            title = '診察 — ID ' .. target, targetId = target, success = success,
             death = confirm.death, injuries = injuries,
             refresh = function() startDiagnosis(target) end,
         }
@@ -121,12 +128,12 @@ local function startDiagnosis(target)
                 end)
                 if activeExamination ~= examination then return end
                 if not shown or opened == false then
-                    MedicalUI.show(snapshot)
-                    notify('EMSManagerを開けなかったため、簡易結果画面を表示しています', 'inform')
+                    local displayed = MedicalUI.openCharts(target, chart.chart.chartId)
+                    if activeExamination == examination and displayed == false then MedicalUI.show(snapshot) end
                 end
             else
-                MedicalUI.show(snapshot)
-                notify('EMSManagerが未起動のため、簡易結果画面を表示しています', 'inform')
+                local displayed = MedicalUI.openCharts(target, chart.chart.chartId)
+                if activeExamination == examination and displayed == false then MedicalUI.show(snapshot) end
             end
         elseif chart and chart.noChart then
             MedicalUI.show(snapshot)
@@ -179,6 +186,11 @@ exports('getTreatmentItems', function()
     return {}
 end)
 
+-- 将来のタブレット等からも、同じ権限確認付きのカルテ画面を開く。
+exports('openCharts', function(targetId, chartId)
+    return MedicalUI.openCharts(targetId, chartId)
+end)
+
 if Config.Target.Enabled then
     exports.ox_target:addGlobalPlayer({
         {
@@ -207,11 +219,7 @@ if Config.Target.Enabled then
             onSelect = function(data)
                 local target = data and serverIdFromPed(data.entity)
                 if not target then return end
-                if GetResourceState('ptech_mediora_manager') ~= 'started' then
-                    notify('EMSManagerが起動していません')
-                    return
-                end
-                exports.ptech_mediora_manager:openCharts(target)
+                MedicalUI.openCharts(target)
             end,
         },
     })
