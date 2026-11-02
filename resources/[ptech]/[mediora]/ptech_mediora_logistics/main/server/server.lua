@@ -157,13 +157,13 @@ end
   【  】
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
-local function contentsStackKey(contents)
-  table.sort(contents, function(a, b) return a.item < b.item end)
-  local parts = {}
-  for _, entry in ipairs(contents) do
-    parts[#parts + 1] = ('%s=%s'):format(entry.item, entry.count)
-  end
-  return table.concat(parts, ';')
+--[[_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+  【  】
+
+_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
+local function normalStackKey(destinationId)
+    return ('regular:%s'):format(destinationId)
 end
 
 
@@ -173,19 +173,8 @@ end
   【  】
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
-local function normalStackKey(contents)
-    return ('regular:%s'):format(contentsStackKey(contents))
-end
-
-
-
---[[_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
-
-  【  】
-
-_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
-local function specialStackKey(date, recipeId, contents)
-  return ('special:%s:%s:%s'):format(date, recipeId, contentsStackKey(contents))
+local function specialStackKey(destinationId)
+  return ('special:%s'):format(destinationId)
 end
 
 
@@ -313,16 +302,10 @@ end
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 local function addBox(source, hospital, contents, kind, date, recipe)
   local stackKey = kind == 'special'
-    and specialStackKey(date, recipe.id, contents)
-    or normalStackKey(contents)
-  local extra = kind == 'special' and {
-    specialDate = date,
-    recipeId = recipe.id,
-    bonusHospital = recipe.targetHospital,
-    description = ('%s / 納品先: %s / 有効日: %s'):format(recipe.label, hospital.label, date),
-  } or nil
+    and specialStackKey(hospital.id)
+    or normalStackKey(hospital.id)
   local itemName = kind == 'special' and Config.Procurement.specialBoxItem or Config.Procurement.boxItem
-  local metadata = boxMetadata(hospital, source, stackKey, kind, extra)
+  local metadata = boxMetadata(hospital, source, stackKey, kind)
   if not exports.ox_inventory:CanCarryItem(source, itemName, 1, metadata) then return false end
 
   local queue = getQueue(source, hospital.id, stackKey)
@@ -337,6 +320,10 @@ local function addBox(source, hospital, contents, kind, date, recipe)
     return false
   end
   return true, parcel.serial, stackKey
+end
+
+local function hasFullServices(hospital)
+  return hospital and hospital.id == (Config.Economy.fullServiceHospitalId or Config.Economy.tradeHospitalId)
 end
 
 
@@ -673,7 +660,7 @@ _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 lib.callback.register('ptech_mediora_logistics:server:getCraftingCatalog',
   function(source, hospitalId)
     local hospital = hospitalById[hospitalId]
-    if not hospital or not isAllowed(source) or not isNear(source, hospital) then return {} end
+    if not hasFullServices(hospital) or not isAllowed(source) or not isNear(source, hospital) then return {} end
     local catalog = {}
     for _, recipe in ipairs(Config.CraftingRecipes) do
       local output = itemById[recipe.output]
@@ -706,7 +693,7 @@ RegisterNetEvent('ptech_mediora_logistics:server:craftItem',
     local source = source
     local hospital = hospitalById[hospitalId]
     local recipe = craftingRecipeById[recipeId]
-    if not hospital or not recipe or not isAllowed(source) or not isNear(source, hospital) then return end
+    if not hasFullServices(hospital) or not recipe or not isAllowed(source) or not isNear(source, hospital) then return end
     if type(count) ~= 'number' or count % 1 ~= 0 or count < 1 or count > getMaxCraftCount(source, recipe) then
       notify(source, Config.Text.missingRecipeItems)
       return
@@ -747,7 +734,7 @@ _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 lib.callback.register('ptech_mediora_logistics:server:getDailySpecial',
   function(source, hospitalId)
     local hospital = hospitalById[hospitalId]
-    if not hospital or not isAllowed(source) or not isNear(source, hospital) then return nil end
+    if not hasFullServices(hospital) or not isAllowed(source) or not isNear(source, hospital) then return nil end
     local recipe, date = getDailyRecipe()
     if not recipe then return nil end
     local target = hospitalById[recipe.targetHospital]
@@ -779,7 +766,7 @@ RegisterNetEvent('ptech_mediora_logistics:server:craftDailySpecial',
     local target       = recipe and hospitalById[recipe.targetHospital]
 
     -- いずれかの条件が満たされない場合は処理を中断
-    if (not hospital) or (not target) or (not isAllowed(source)) or (not isNear(source, hospital)) then return end
+    if (not hasFullServices(hospital)) or (not target) or (not isAllowed(source)) or (not isNear(source, hospital)) then return end
 
     -- レシピの材料が揃っているか確認 >> 揃っていない場合は通知して処理を中断
     for itemId, required in pairs(recipe.ingredients) do
@@ -796,18 +783,12 @@ RegisterNetEvent('ptech_mediora_logistics:server:craftDailySpecial',
     end
 
     -- 箱のスタックキーとメタデータを作成
-    local stackKey = specialStackKey(date, recipe.id, contents)
+    local stackKey = specialStackKey(target.id)
     local metadata = boxMetadata(
       target,
       source,
       stackKey,
-      'special',
-      {
-        specialDate = date,
-        recipeId = recipe.id,
-        bonusHospital = target.id,
-        description = ('%s / 納品先: %s / 有効日: %s'):format(recipe.label, target.label, date),
-      }
+      'special'
     )
 
     -- インベントリに空きがあるか確認 >> 空きがない場合は通知して処理を中断
@@ -896,58 +877,44 @@ exports( 'openDeliveryBox',
 
     -- スロット情報を取得
     local slotData      = exports.ox_inventory:GetSlot(source, slot)
+    local metadata = slotData and slotData.metadata
+    local destinationId = metadata and metadata.destinationId
+    local hospital = destinationId and hospitalById[destinationId]
+    if not slotData or (slotData.name ~= Config.Procurement.boxItem and slotData.name ~= Config.Procurement.specialBoxItem)
+      or not hospital or metadata.ownerId ~= ownerId(source) or not metadata.stackKey then return false end
 
-    -- メタデータを取得
-    local metadata      = slotData and slotData.metadata
-
-    -- 配送先IDと病院情報を取得
-    local destinationId = metadata      and metadata.destinationId
-    local hospital      = destinationId and hospitalById[destinationId]
-
-    -- メタデータと病院情報の妥当性を確認 >> 一致していない場合は処理を中断
-    if not hospital or metadata.ownerId ~= ownerId(source) or not metadata.stackKey then return false end
-
-    -- 配送キューを取得
-    local queue = getQueue(source, destinationId, metadata.stackKey)
-
-    -- 配送キューの先頭の荷物を取得
-    local parcel = queue[1]
-
-    -- 配送キューにアイテムが存在しない場合は処理を中断
-    if not parcel then return false end
-
-    -- 配送キューの内容を確認
-    for _, entry in ipairs(parcel.contents) do
-      if not exports.ox_inventory:CanCarryItem(source, entry.item, entry.count) then
-        -- 所持可能か確認できなかった場合は処理を中断して通知する
-        notify(source, Config.Text.inventoryFull)
-        return false
-      end
-    end
-
-    -- 箱アイテムをインベントリから削除 >> 失敗した場合は処理を中断
-    local removed = exports.ox_inventory:RemoveItem(source, item.name, 1, metadata, slot, false, true)
-    if (not removed) then return false end
-
-    -- 配送キューから先頭の荷物を削除
-    table.remove(queue, 1)
-
-    -- 配送キューを更新
-    setQueue(source, destinationId, metadata.stackKey, queue)
-
-    -- 配送キューの内容をインベントリに追加
-    for _, entry in ipairs(parcel.contents) do
-      -- アイテムをインベントリに追加
-      exports.ox_inventory:AddItem(source, entry.item, entry.count)
-    end
-
-    -- 開封通知を送信
-    notify(source, Config.Text.boxOpened:format(parcel.serial))
-
-    -- 処理完了
-    return true
+    TriggerClientEvent('ptech_mediora_logistics:client:showBoxMenu', source, slot, hospital.label,
+      hospital.coords.x, hospital.coords.y)
+    return false -- 使用時は選択メニューを開き、選択後にサーバーで開封する
   end
 ) -- openDeliveryBox
+
+RegisterNetEvent('ptech_mediora_logistics:server:openDeliveryBox', function(slot)
+  local source = source
+  if not isAllowed(source) or type(slot) ~= 'number' then return end
+  local slotData = exports.ox_inventory:GetSlot(source, slot)
+  local metadata = slotData and slotData.metadata
+  local destinationId = metadata and metadata.destinationId
+  local hospital = destinationId and hospitalById[destinationId]
+  if not slotData or (slotData.name ~= Config.Procurement.boxItem and slotData.name ~= Config.Procurement.specialBoxItem)
+    or not hospital or metadata.ownerId ~= ownerId(source) or not metadata.stackKey then return end
+
+  local queue = getQueue(source, destinationId, metadata.stackKey)
+  local parcel = queue[1]
+  if not parcel then return end
+  for _, entry in ipairs(parcel.contents or {}) do
+    if not exports.ox_inventory:CanCarryItem(source, entry.item, entry.count) then
+      notify(source, Config.Text.inventoryFull)
+      return
+    end
+  end
+
+  if not exports.ox_inventory:RemoveItem(source, slotData.name, 1, metadata, slot, false, true) then return end
+  table.remove(queue, 1)
+  setQueue(source, destinationId, metadata.stackKey, queue)
+  for _, entry in ipairs(parcel.contents) do exports.ox_inventory:AddItem(source, entry.item, entry.count) end
+  notify(source, Config.Text.boxOpened:format(parcel.serial))
+end)
 
 
 

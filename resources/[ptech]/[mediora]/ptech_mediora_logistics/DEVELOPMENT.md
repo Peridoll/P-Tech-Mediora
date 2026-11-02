@@ -21,7 +21,8 @@ ptech_mediora_logistics/
 
 - Pickup cooldown is 15 minutes per configured point; each interaction grants one carton containing 5–10 random medical items.
 - Carton destination is selected from `Config.Hospitals`.
-- Cartons store serials and contents in resource KVP per character. Boxes stack only when owner, destination, type/date/recipe, and exact contents match; direct give/drop is blocked to keep records attached to their owner.
+- Cartons store serials and each parcel's contents in resource KVP per character. New boxes stack by owner, destination, and box type even when their contents differ; opening or delivering consumes parcels in queue order. Direct give/drop is blocked to keep records attached to their owner.
+- Using a box opens a menu to set a waypoint to its destination or open it. Opening plays an animation with a configurable five-second progress action; canceling leaves the box untouched. All hospitals accept deliveries; only the configured full-service hospital allows crafting, and only the configured trade hospital allows buying and selling. Server handlers enforce these restrictions.
 - Daily special-carton recipes rotate using Japan time. A same-day delivery to the specified hospital receives the configured premium; expired cartons pay the regular amount.
 - Regular and special sale multipliers, prices, and recipe pool are balance placeholders. Tune them in config after playtesting.
 - AED is in the item catalog but has no buy/sell price, so it is omitted from trade menus.

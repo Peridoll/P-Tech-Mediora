@@ -382,7 +382,7 @@ local function openHospitalMenu(hospital)
     deliverDescription = ('%s / 本日の納品倍率 ×%.2f'):format(deliverDescription, dailyMultiplier)
   end
 
-  -- 医療道具の売買メニューは本院のみ表示する。Serverでも同じ条件を確認する。
+  -- すべての病院で納品できる。納品以外の機能はフルサービス拠点だけに表示する。
   local options = {
     {
       title       = Config.Text.menuDeliver,
@@ -390,13 +390,22 @@ local function openHospitalMenu(hospital)
       icon        = 'truck-medical',
       onSelect    = function() requestDelivery(hospital) end,
     },
-    {
+  }
+
+  if hospital.id == (Config.Economy.fullServiceHospitalId or Config.Economy.tradeHospitalId) then
+    options[#options + 1] = {
       title       = Config.Text.menuCraftSpBox,
       description = Config.Text.menuCraftSpBoxDesc,
       icon        = 'box',
       onSelect    = function() requestDailySpecial(hospital) end,
-    },
-  }
+    }
+    options[#options + 1] = {
+      title       = Config.Text.menuCraftTools,
+      description = Config.Text.menuCraftToolsDesc,
+      icon        = 'screwdriver-wrench',
+      onSelect    = function() requestCraftItem(hospital) end,
+    }
+  end
 
   if hospital.id == Config.Economy.tradeHospitalId then
     options[#options + 1] = {
@@ -412,13 +421,6 @@ local function openHospitalMenu(hospital)
       onSelect    = function() requestTrade(hospital, 'sell') end,
     }
   end
-
-  options[#options + 1] = {
-    title       = Config.Text.menuCraftTools,
-    description = Config.Text.menuCraftToolsDesc,
-    icon        = 'screwdriver-wrench',
-    onSelect    = function() requestCraftItem(hospital) end,
-  }
 
   -- 病院メニューのコンテキストを登録
   lib.registerContext({
@@ -588,3 +590,49 @@ RegisterNetEvent(
     notify(message)
   end -- function(message)
 ) -- RegisterNetEvent
+
+RegisterNetEvent('ptech_mediora_logistics:client:showBoxMenu', function(slot, destinationLabel, x, y)
+  local contextId = ('mediora_box_%s'):format(slot)
+  lib.registerContext({
+    id = contextId,
+    title = Config.Text.boxMenu,
+    options = {
+      {
+        title = Config.Text.boxNavigate,
+        description = destinationLabel,
+        icon = 'location-dot',
+        onSelect = function()
+          SetNewWaypoint(x + 0.0, y + 0.0)
+          notify(('%sをマップに設定しました。'):format(destinationLabel))
+        end,
+      },
+      {
+        title = Config.Text.boxOpen,
+        description = destinationLabel,
+        icon = 'box-open',
+        onSelect = function()
+          local completed = lib.progressCircle({
+            duration = Config.Procurement.boxOpenDurationMs,
+            label = Config.Text.boxOpening,
+            position = 'bottom',
+            canCancel = true,
+            useWhileDead = false,
+            disable = { move = true, car = true, combat = true },
+            anim = {
+              dict = 'anim@amb@business@coc@coc_unpack_cut@',
+              clip = 'fullcut_cycle_v1_cokepacker',
+              flag = 1,
+            },
+          })
+
+          if completed then
+            TriggerServerEvent('ptech_mediora_logistics:server:openDeliveryBox', slot)
+          else
+            notify(Config.Text.boxOpenCancelled, 'inform')
+          end
+        end,
+      },
+    },
+  })
+  lib.showContext(contextId)
+end)
