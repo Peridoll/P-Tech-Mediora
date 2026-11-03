@@ -1,11 +1,9 @@
 local vehicleConfigs = {}
 local states = {}
 
-for _, vehicleConfig in pairs(VehicleAssets) do
-    for _, modelName in ipairs(vehicleConfig.Models or {}) do
-        if vehicleConfig.Mooring and vehicleConfig.Mooring.Enabled then
-            vehicleConfigs[joaat(modelName)] = vehicleConfig.Mooring
-        end
+for modelName, vehicleConfig in pairs(Config.Vehicles) do
+    if vehicleConfig.mooring and vehicleConfig.mooring.enabled then
+        vehicleConfigs[joaat(modelName)] = vehicleConfig.mooring
     end
 end
 
@@ -46,36 +44,75 @@ local function horizontalDistance(first, second)
     return math.sqrt((x * x) + (y * y))
 end
 
+local function horizontalVelocityChange(first, second)
+    local x = first.x - second.x
+    local y = first.y - second.y
+    return math.sqrt((x * x) + (y * y))
+end
+
 local function updateMooring(vehicle, config, now)
-    if hasOccupant(vehicle) or (config.OnlyWhenInWater and not IsEntityInWater(vehicle)) then
-        states[vehicle] = nil
-        return
-    end
-
-    if not hasPhysicsControl(vehicle) then
-        return
-    end
-
     local position = GetEntityCoords(vehicle)
     local velocity = GetEntityVelocity(vehicle)
     local speed = horizontalSpeed(velocity)
     local state = states[vehicle]
 
-    if not state then
-        states[vehicle] = {
-            armedAt = now,
-            lastPosition = position,
-        }
+    if hasOccupant(vehicle) then
+        state = state or {}
+        state.wasOccupied = true
+        state.lastPosition = position
+        state.lastSpeed = speed
+        state.lastVelocity = velocity
+        states[vehicle] = state
         return
     end
 
-    local moved = horizontalDistance(position, state.lastPosition)
+    if not state then
+        state = { armedAt = now, lastPosition = position, lastSpeed = speed }
+        states[vehicle] = state
+    end
+
+    if state.wasOccupied then
+        state.wasOccupied = nil
+        state.armedAt = now
+        state.exitDampingUntil = now + config.exitDampingMs
+    end
+
+    local moved = horizontalDistance(position, state.lastPosition or position)
+    local speedDelta = math.abs(speed - (state.lastSpeed or speed))
+    local velocityChange = state.lastVelocity and horizontalVelocityChange(velocity, state.lastVelocity) or 0.0
     state.lastPosition = position
+    state.lastSpeed = speed
+    state.lastVelocity = velocity
+
+    if not hasPhysicsControl(vehicle) then
+        return
+    end
+
+    if state.exitDampingUntil and now < state.exitDampingUntil then
+        if speedDelta >= config.collisionSpeedDeltaMps or velocityChange >= config.collisionImpulseMps then
+            state.exitDampingUntil = nil
+            state.releaseUntil = now + config.releaseCooldownMs
+            return
+        end
+
+        SetEntityVelocity(
+            vehicle,
+            velocity.x * config.exitVelocityMultiplier,
+            velocity.y * config.exitVelocityMultiplier,
+            velocity.z
+        )
+        return
+    end
+
+    if config.onlyWhenInWater and not IsEntityInWater(vehicle) then
+        state.armedAt = now
+        return
+    end
 
     -- 強い衝突や押し出しが起きた車両には一切の減衰をかけず、自由に動かす。
-    if speed >= config.ReleaseSpeedMps or moved >= config.ReleaseDistanceM then
+    if speed >= config.releaseSpeedMps or moved >= config.releaseDistanceM then
         state.armedAt = nil
-        state.releaseUntil = now + config.ReleaseCooldownMs
+        state.releaseUntil = now + config.releaseCooldownMs
         return
     end
 
@@ -88,25 +125,26 @@ local function updateMooring(vehicle, config, now)
         state.armedAt = now
     end
 
-    if speed > config.PassiveDriftSpeedMps then
+    if speed > config.passiveDriftSpeedMps then
         state.armedAt = now
         return
     end
 
-    if now - state.armedAt < config.ArmDelayMs then
+    if now - state.armedAt < config.armDelayMs then
         return
+    end
+
+    if config.engineStopWhenMoored and GetIsVehicleEngineRunning(vehicle) then
+        SetVehicleEngineOn(vehicle, false, true, true)
     end
 
     -- Z速度は保ち、水上の浮力・沈み込みには干渉しない。座標固定や衝突設定の変更もしない。
     SetEntityVelocity(
         vehicle,
-        velocity.x * config.PassiveVelocityMultiplier,
-        velocity.y * config.PassiveVelocityMultiplier,
+        velocity.x * config.passiveVelocityMultiplier,
+        velocity.y * config.passiveVelocityMultiplier,
         velocity.z
     )
-    if config.StopEngineWhenMooring and speed < 0.08 and GetIsVehicleEngineRunning(vehicle) then
-        SetVehicleEngineOn(vehicle, false, true, true)
-    end
 end
 
 CreateThread(function()
@@ -119,7 +157,7 @@ CreateThread(function()
             local config = vehicleConfigs[GetEntityModel(vehicle)]
             if config then
                 activeVehicles[vehicle] = true
-                shortestInterval = math.min(shortestInterval, config.ScanIntervalMs)
+                shortestInterval = math.min(shortestInterval, config.scanIntervalMs)
                 updateMooring(vehicle, config, now)
             end
         end
@@ -131,51 +169,5 @@ CreateThread(function()
         end
 
         Wait(shortestInterval)
-    end
-end)
-
-local lastVehicle = 0
-local lastInVehicle = false
-local dismountUntil = 0
-local dampingVehicle = 0
-CreateThread(function()
-    while true do
-        local ped = PlayerPedId()
-        local vehicle = GetVehiclePedIsIn(ped, false)
-        local inVehicle = vehicle ~= 0
-        if lastInVehicle and not inVehicle and lastVehicle ~= 0 then
-            local config = vehicleConfigs[GetEntityModel(lastVehicle)]
-            if config and config.DismountDampingMs then
-                dampingVehicle = lastVehicle
-                dismountUntil = GetGameTimer() + config.DismountDampingMs
-                if NetworkGetEntityIsNetworked(dampingVehicle) and not NetworkHasControlOfEntity(dampingVehicle) then
-                    NetworkRequestControlOfEntity(dampingVehicle)
-                end
-                if NetworkHasControlOfEntity(dampingVehicle) then
-                    local velocity = GetEntityVelocity(dampingVehicle)
-                    SetEntityVelocity(dampingVehicle,
-                        velocity.x * (config.DismountVelocityMultiplier or 0.12),
-                        velocity.y * (config.DismountVelocityMultiplier or 0.12),
-                        velocity.z)
-                end
-            end
-        end
-        if inVehicle then lastVehicle = vehicle end
-        lastInVehicle = inVehicle
-        if dismountUntil > GetGameTimer() and DoesEntityExist(dampingVehicle) then
-            local config = vehicleConfigs[GetEntityModel(dampingVehicle)]
-            if config and NetworkHasControlOfEntity(dampingVehicle) then
-                local velocity = GetEntityVelocity(dampingVehicle)
-                SetEntityVelocity(dampingVehicle,
-                    velocity.x * (config.DismountVelocityMultiplier or 0.12),
-                    velocity.y * (config.DismountVelocityMultiplier or 0.12),
-                    velocity.z)
-            end
-            Wait(100)
-        else
-            dismountUntil = 0
-            dampingVehicle = 0
-            Wait(25)
-        end
     end
 end)

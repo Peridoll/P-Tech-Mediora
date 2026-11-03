@@ -2,11 +2,9 @@ local vehicleConfigs = {}
 local weapon = joaat('VEHICLE_WEAPON_CANNON_BLAZER')
 local disabled
 
-for _, vehicleConfig in pairs(VehicleAssets) do
-    for _, modelName in ipairs(vehicleConfig.Models or {}) do
-        vehicleConfigs[joaat(modelName)] = vehicleConfig
-        AddTextEntry(vehicleConfig.GameName or ('PTECH_' .. modelName:upper()), vehicleConfig.DisplayName or modelName)
-    end
+for modelName, vehicleConfig in pairs(Config.Vehicles) do
+    vehicleConfigs[joaat(modelName)] = vehicleConfig
+    AddTextEntry(vehicleConfig.gameName or ('PTECH_' .. modelName:upper()), vehicleConfig.label or modelName)
 end
 
 local function releaseWeapon()
@@ -21,7 +19,7 @@ CreateThread(function()
         local ped = PlayerPedId()
         local vehicle = GetVehiclePedIsIn(ped, false)
         local vehicleConfig = vehicle ~= 0 and vehicleConfigs[GetEntityModel(vehicle)] or nil
-        local active = vehicleConfig and vehicleConfig.DisableVehicleWeapon
+        local active = vehicleConfig and vehicleConfig.disableVehicleWeapon
             and GetPedInVehicleSeat(vehicle, -1) == ped
 
         if disabled and (not active or disabled.vehicle ~= vehicle or disabled.ped ~= ped) then

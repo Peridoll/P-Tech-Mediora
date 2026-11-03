@@ -1,119 +1,174 @@
-local carrierConfigs = {}
 local deployedByCarrier = {}
 
-for assetId, vehicleConfig in pairs(VehicleAssets) do
-    local callout = vehicleConfig.Callout
-    if callout then
-        for _, modelName in ipairs(callout.CarrierModels or {}) do
-            carrierConfigs[joaat(modelName)] = { assetId = assetId, vehicle = vehicleConfig, callout = callout }
-        end
-    end
+local function notify(source, success, message)
+    TriggerClientEvent('ptech_mediora_vehicles:client:calloutResult', source, success, message)
 end
 
-local function notify(src, message, kind)
-    TriggerClientEvent('ox_lib:notify', src, { description = message, type = kind or 'inform' })
+local function isMedicalEmployee(source)
+    local player = exports.qbx_core:GetPlayer(source)
+    return player and player.PlayerData and player.PlayerData.job
+        and player.PlayerData.job.name == Config.Job
 end
 
-local function playerNearVehicle(src, vehicle, maxDistance)
-    local ped = GetPlayerPed(src)
-    return ped ~= 0 and DoesEntityExist(ped)
-        and #(GetEntityCoords(ped) - GetEntityCoords(vehicle)) <= maxDistance
+local function getCalloutForCarrier(modelHash)
+    local configurations = Config.CalloutCarriers[modelHash]
+    return configurations and configurations[1]
 end
 
-local function hasKeys(src, vehicle)
-    return GetResourceState('qbx_vehiclekeys') == 'started'
-        and exports.qbx_vehiclekeys:HasKeys(src, vehicle) == true
+local function getCarrier(source, netId)
+    if type(netId) ~= 'number' or netId < 1 then return nil end
+    local carrier = NetworkGetEntityFromNetworkId(netId)
+    if carrier == 0 or not DoesEntityExist(carrier) then return nil end
+
+    local callout = getCalloutForCarrier(GetEntityModel(carrier))
+    if not callout then return nil end
+
+    local ped = GetPlayerPed(source)
+    if ped == 0 or #(GetEntityCoords(ped) - GetEntityCoords(carrier)) > callout.maxDistance then
+        return nil
+    end
+
+    if not exports.qbx_vehiclekeys:HasKeys(source, carrier) then return nil end
+    return carrier, callout
 end
 
-local function sendState(src, carrierNetId)
-    local deployed = deployedByCarrier[carrierNetId]
-    local deployedNetId = deployed and DoesEntityExist(deployed) and NetworkGetNetworkIdFromEntity(deployed) or nil
-    TriggerClientEvent('ptech_mediora_vehicles:client:setCalloutState', src, carrierNetId, deployedNetId)
+local function broadcastState(carrierNetId, blazerNetId)
+    TriggerClientEvent('ptech_mediora_vehicles:client:calloutState', -1, carrierNetId, blazerNetId)
 end
 
-RegisterNetEvent('ptech_mediora_vehicles:server:deployCallout', function(carrierNetId)
-    local src = source
-    if type(carrierNetId) ~= 'number' then return end
-    local carrier = NetworkGetEntityFromNetworkId(carrierNetId)
-    if carrier == 0 or not DoesEntityExist(carrier) then return end
+local function registerWithAdvancedGarages(vehicle, netId)
+    if GetResourceState('jg-advancedgarages') ~= 'started' then return end
+    local plate = GetVehicleNumberPlateText(vehicle)
+    if type(plate) ~= 'string' or plate:gsub('%s+', '') == '' then return end
 
-    local registration = carrierConfigs[GetEntityModel(carrier)]
-    if not registration or not hasKeys(src, carrier) then return end
-    if GetEntityRoutingBucket(carrier) ~= GetPlayerRoutingBucket(src) then return end
-    if not playerNearVehicle(src, carrier, MedioraVehicles.Callout.ServerDistance) then return end
+    pcall(function()
+        exports['jg-advancedgarages']:registerVehicleOutside(plate, netId)
+    end)
+end
 
-    local existing = deployedByCarrier[carrierNetId]
-    if existing and DoesEntityExist(existing) then
-        sendState(src, carrierNetId)
-        return
-    end
-    deployedByCarrier[carrierNetId] = nil
+local function unregisterWithAdvancedGarages(vehicle)
+    if GetResourceState('jg-advancedgarages') ~= 'started' then return end
+    local plate = GetVehicleNumberPlateText(vehicle)
+    if type(plate) ~= 'string' or plate:gsub('%s+', '') == '' then return end
 
-    local callout = registration.callout
-    local modelName = registration.vehicle.Models[1]
-    local modelHash = joaat(modelName)
-    local offset = callout.SpawnOffset or vector3(0.0, -4.8, 0.2)
-    local spawn = GetOffsetFromEntityInWorldCoords(carrier, offset.x, offset.y, offset.z)
-    local heading = GetEntityHeading(carrier) + (callout.SpawnHeadingOffset or 180.0)
+    pcall(function()
+        exports['jg-advancedgarages']:deleteOutsideVehicle(plate)
+    end)
+end
 
-    if IsAnyVehicleNearPoint(spawn.x, spawn.y, spawn.z, MedioraVehicles.Callout.SpawnClearance) then
-        notify(src, '後方に車両を展開するスペースがありません。', 'error')
-        return
-    end
+local function getRearSpawnCoords(vehicle, offset)
+    local coords = GetEntityCoords(vehicle)
+    local heading = math.rad(GetEntityHeading(vehicle))
+    local cosine, sine = math.cos(heading), math.sin(heading)
 
-    local deployed = CreateVehicleServerSetter(modelHash, callout.ModelType or 'bike',
-        spawn.x, spawn.y, spawn.z, heading)
-    if deployed == 0 or not DoesEntityExist(deployed) then
-        notify(src, '車両を展開できませんでした。', 'error')
-        return
-    end
-
-    SetEntityRoutingBucket(deployed, GetPlayerRoutingBucket(src))
-    SetEntityOrphanMode(deployed, 2)
-    exports.qbx_vehiclekeys:GiveKeys(src, deployed, true)
-    if not hasKeys(src, deployed) then
-        DeleteEntity(deployed)
-        notify(src, '車両キーを渡せなかったため、展開を取り消しました。', 'error')
-        return
-    end
-
-    deployedByCarrier[carrierNetId] = deployed
-    local deployedNetId = NetworkGetNetworkIdFromEntity(deployed)
-    TriggerClientEvent('ptech_mediora_vehicles:client:setCalloutState', -1, carrierNetId, deployedNetId)
-    notify(src, 'EMSブレイザーを展開しました。')
-end)
-
-RegisterNetEvent('ptech_mediora_vehicles:server:storeCallout', function(carrierNetId, deployedNetId)
-    local src = source
-    if type(carrierNetId) ~= 'number' or type(deployedNetId) ~= 'number' then return end
-    local carrier = NetworkGetEntityFromNetworkId(carrierNetId)
-    local deployed = NetworkGetEntityFromNetworkId(deployedNetId)
-    if carrier == 0 or deployed == 0 or not DoesEntityExist(carrier) or not DoesEntityExist(deployed) then return end
-    if not carrierConfigs[GetEntityModel(carrier)] or not hasKeys(src, carrier) then return end
-    if GetEntityRoutingBucket(carrier) ~= GetPlayerRoutingBucket(src)
-        or GetEntityRoutingBucket(deployed) ~= GetPlayerRoutingBucket(src) then return end
-    if not playerNearVehicle(src, carrier, MedioraVehicles.Callout.ServerDistance) then return end
-    if deployedByCarrier[carrierNetId] ~= deployed then return end
-
-    local playerPed = GetPlayerPed(src)
-    if #(GetEntityCoords(playerPed) - GetEntityCoords(deployed)) > MedioraVehicles.Callout.ServerDistance then return end
-    for _, seatPed in ipairs({ GetPedInVehicleSeat(deployed, -1), GetPedInVehicleSeat(deployed, 0) }) do
-        if seatPed ~= 0 then
-            notify(src, '乗員がいる車両は格納できません。', 'error')
-            return
-        end
-    end
-
-    DeleteEntity(deployed)
-    deployedByCarrier[carrierNetId] = nil
-    TriggerClientEvent('ptech_mediora_vehicles:client:setCalloutState', -1, carrierNetId, nil)
-    notify(src, 'EMSブレイザーを格納しました。')
-end)
+    return {
+        x = coords.x + offset.x * cosine - offset.y * sine,
+        y = coords.y + offset.x * sine + offset.y * cosine,
+        z = coords.z + offset.z,
+    }
+end
 
 RegisterNetEvent('ptech_mediora_vehicles:server:requestCalloutState', function()
-    local src = source
+    local source = source
     for carrierNetId, deployed in pairs(deployedByCarrier) do
-        if DoesEntityExist(deployed) then sendState(src, carrierNetId) end
+        if DoesEntityExist(deployed.entity) then
+            TriggerClientEvent('ptech_mediora_vehicles:client:calloutState', source, carrierNetId, deployed.netId)
+        else
+            deployedByCarrier[carrierNetId] = nil
+            broadcastState(carrierNetId, nil)
+        end
     end
 end)
 
+RegisterNetEvent('ptech_mediora_vehicles:server:callout', function(action, carrierNetId)
+    local source = source
+    if not isMedicalEmployee(source) then
+        notify(source, false, 'EMS勤務者のみ利用できます。')
+        return
+    end
+
+    local carrier, callout = getCarrier(source, carrierNetId)
+    if not carrier then
+        notify(source, false, '対象車両の後部で、車両キーを持っていることを確認してください。')
+        return
+    end
+
+    if action == 'deploy' then
+        if deployedByCarrier[carrierNetId] then
+            notify(source, false, 'この車両からはすでにブレイザーが出ています。')
+            return
+        end
+
+        local model = joaat(callout.spawnedModel)
+        local offset = callout.rearOffset
+        local spawn = getRearSpawnCoords(carrier, offset)
+        local vehicle = CreateVehicleServerSetter(
+            model,
+            callout.vehicleType,
+            spawn.x,
+            spawn.y,
+            spawn.z,
+            GetEntityHeading(carrier)
+        )
+
+        if vehicle == 0 or not DoesEntityExist(vehicle) then
+            notify(source, false, 'ブレイザーを出せませんでした。')
+            return
+        end
+
+        SetEntityRoutingBucket(vehicle, GetPlayerRoutingBucket(source))
+        local blazerNetId = NetworkGetNetworkIdFromEntity(vehicle)
+        if not blazerNetId or blazerNetId < 1 then
+            DeleteEntity(vehicle)
+            notify(source, false, '車両ネットワークIDを取得できませんでした。')
+            return
+        end
+
+        registerWithAdvancedGarages(vehicle, blazerNetId)
+        Entity(vehicle).state:set('ptech_mediora_vehicles:carrierNetId', carrierNetId, true)
+        deployedByCarrier[carrierNetId] = { entity = vehicle, netId = blazerNetId }
+        local keysOk = pcall(function()
+            exports.qbx_vehiclekeys:GiveKeys(source, vehicle)
+        end)
+        if not keysOk or not exports.qbx_vehiclekeys:HasKeys(source, vehicle) then
+            unregisterWithAdvancedGarages(vehicle)
+            DeleteEntity(vehicle)
+            deployedByCarrier[carrierNetId] = nil
+            notify(source, false, 'ブレイザーのキーを渡せなかったため、呼び出しを取り消しました。')
+            return
+        end
+        broadcastState(carrierNetId, blazerNetId)
+        notify(source, true, 'ブレイザーを呼び出しました。')
+        return
+    end
+
+    if action == 'store' then
+        local deployed = deployedByCarrier[carrierNetId]
+        if not deployed or not DoesEntityExist(deployed.entity) then
+            deployedByCarrier[carrierNetId] = nil
+            broadcastState(carrierNetId, nil)
+            notify(source, false, '格納できるブレイザーがありません。')
+            return
+        end
+
+        unregisterWithAdvancedGarages(deployed.entity)
+        DeleteEntity(deployed.entity)
+        deployedByCarrier[carrierNetId] = nil
+        broadcastState(carrierNetId, nil)
+        notify(source, true, 'ブレイザーを格納しました。')
+        return
+    end
+
+    notify(source, false, '操作を認識できませんでした。')
+end)
+
+AddEventHandler('onResourceStop', function(resource)
+    if resource ~= GetCurrentResourceName() then return end
+    for carrierNetId, deployed in pairs(deployedByCarrier) do
+        if DoesEntityExist(deployed.entity) then
+            unregisterWithAdvancedGarages(deployed.entity)
+            DeleteEntity(deployed.entity)
+        end
+        deployedByCarrier[carrierNetId] = nil
+    end
+end)
