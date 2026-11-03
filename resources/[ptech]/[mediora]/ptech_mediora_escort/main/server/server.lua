@@ -108,11 +108,11 @@ local function stopNovaEscort(src)
         exports['nova-escort']:stopEscort(src)
     end
 end
-local function start(carrier,target,fromVehicle,bikePickup)
+local function start(carrier,target,fromVehicle,vehiclePickup,forceShoulder)
     target=tonumber(target)
     if not target or target==carrier or not validPed(carrier) or not validPed(target) or active[carrier] or held[target] or active[target] or held[carrier] then return end
-    if not living(carrier) or not sameBucket(carrier,target) or not nearPed(carrier,target,bikePickup and Config.VehicleRange or (fromVehicle and Config.TargetDistance+2 or Config.NormalRange)) then return end
-    if not bikePickup and GetVehiclePedIsIn(GetPlayerPed(carrier),false)~=0 then return end
+    if not living(carrier) or not sameBucket(carrier,target) or not nearPed(carrier,target,vehiclePickup and Config.VehicleRange or (fromVehicle and Config.TargetDistance+2 or Config.NormalRange)) then return end
+    if not vehiclePickup and GetVehiclePedIsIn(GetPlayerPed(carrier),false)~=0 then return end
     local ped=GetPlayerPed(target)
     local data=playerData(target)
     if not EscortRules.eligible(Player(target).state,data and data.metadata,GetEntityHealth(ped)) then return end
@@ -123,7 +123,8 @@ local function start(carrier,target,fromVehicle,bikePickup)
     local cp=preference(carrier)
     local tp=preference(target)
     local chosen=cp and cp.style or Config.DefaultStyle
-    if tp and tp.denied[chosen] then chosen=Config.DefaultStyle end
+    if forceShoulder then chosen='fireman'
+    elseif tp and tp.denied[chosen] then chosen=Config.DefaultStyle end
     stopNovaEscort(carrier)
     stopNovaEscort(target)
     ticket=ticket+1
@@ -218,7 +219,6 @@ RegisterNetEvent('ptech_mediora_escort:server:emsPickup',function(netId,passenge
         for s=0,passengerCount-1 do
             if GetPedInVehicleSeat(vehicle,s)==0 then free[#free+1]=s end
         end
-        if #free==0 then notify(src,Config.Text.noSeat);return end
     end
     local patients={}
     for _,id in ipairs(GetPlayers()) do
@@ -235,9 +235,9 @@ RegisterNetEvent('ptech_mediora_escort:server:emsPickup',function(netId,passenge
     table.sort(patients,function(a,b) return a.dist<b.dist end)
     local pdOnly=false
     for _,p in ipairs(patients) do if p.pd then pdOnly=true;break end end
-    if bikePickup then
+    if bikePickup or #free==0 then
         for _,p in ipairs(patients) do
-            if (not pdOnly or p.pd) and start(src,p.id,false,true) then return end
+            if (not pdOnly or p.pd) and start(src,p.id,false,true,not bikePickup) then return end
         end
         return
     end
