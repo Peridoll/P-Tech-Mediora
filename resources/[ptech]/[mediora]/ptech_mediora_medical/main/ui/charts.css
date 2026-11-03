@@ -7,8 +7,53 @@
   padding: 28px;
   background: rgba(3, 10, 15, .48);
 }
-.chart-panel { width: min(1120px, 100%); }
-.chart-content { padding: 24px 30px; overflow: auto; min-height: 0; }
+.chart-panel {
+  width: min(1120px, 100%, calc((100dvh - 56px) * 14 / 9));
+  height: auto;
+  aspect-ratio: 14 / 9;
+  max-height: none;
+  position: relative;
+  border: 1px solid #53606a;
+  border-radius: 32px;
+  --tablet-side: 54px;
+  padding: 14px calc(var(--tablet-side) + 10px) 14px 18px;
+  background: #080c11;
+  box-shadow: 0 26px 80px #000b, inset 0 0 0 2px #202832;
+}
+.chart-panel::before {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+.chart-panel::before {
+  inset: 0 0 0 auto;
+  width: var(--tablet-side);
+  background: #f2f3f4;
+  border-left: 1px solid #a4afb8;
+}
+.tablet-home {
+  position: absolute;
+  padding: 0;
+  top: 50%;
+  right: calc(var(--tablet-side) / 2);
+  width: 24px;
+  height: 24px;
+  transform: translate(50%, -50%);
+  border: 1px solid #8c98a3;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: inset 0 0 0 2px #e2e6ea;
+}
+.chart-panel > header {
+  border-radius: 17px 17px 0 0;
+  background: #172632;
+}
+.chart-panel > .chart-content { flex: 1; background: var(--bg); border-radius: 0 0 17px 17px; }
+@media (max-width: 720px) {
+  .chart-panel { width: min(1120px, 100%, calc((100dvh - 20px) * 14 / 9)); --tablet-side: 36px; border-radius: 24px; padding: 12px calc(var(--tablet-side) + 6px) 12px 8px; }
+  .tablet-home { width: 18px; height: 18px; }
+}
+.chart-content { padding: 6px 30px 24px; overflow: auto; min-height: 0; }
 .chart-search { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
 .chart-search label { font-size: 13px; }
 .chart-search input {
@@ -21,7 +66,7 @@
   font: inherit;
 }
 .chart-search input:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
-.chart-columns { display: grid; grid-template-columns: minmax(210px, 1fr) minmax(0, 2fr); gap: 24px; margin-top: 22px; }
+.chart-columns { display: grid; grid-template-columns: minmax(210px, 1fr) minmax(0, 2fr); gap: 24px; margin-top: 0; }
 .chart-list { display: grid; gap: 8px; max-height: 360px; overflow-y: auto; margin-top: 14px; padding: 3px; }
 .chart-choice {
   width: 100%;
@@ -37,10 +82,285 @@
 .chart-choice, #chart-patient-name, .chart-detail p { overflow-wrap: anywhere; }
 .chart-detail { min-width: 0; }
 .chart-detail > p { font-size: 13px; line-height: 1.7; }
-#chart-injuries { margin-top: 18px; grid-template-columns: 1fr; }
+.chart-detail {
+  padding: clamp(14px, 3vw, 28px);
+  border: 1px solid #cbd5db;
+  border-radius: 6px;
+  background: #f8faf9;
+  color: #183349;
+}
+.sheet-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.sheet-heading h2 { margin: 3px 0 0; font-size: 25px; }
+.sheet-heading > span { border: 1px solid #35665f; color: #35665f; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+.sheet-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 16px 0; border-top: 2px solid #355568; }
+.sheet-fields div { padding: 8px; border-bottom: 1px solid #cbd5db; overflow-wrap: anywhere; }
+.sheet-fields dt { color: #4b6472; font-size: 11px; }
+.sheet-fields dd { margin: 4px 0 0; font-size: 14px; font-weight: 700; }
+.chart-detail h3 { margin: 0; padding: 6px 9px; background: #234557; color: #fff; font-size: 13px; }
+#chart-observation { margin: 0 0 12px; color: #4b6472; }
+.sheet-findings { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 12px; text-align: left; }
+.sheet-findings th, .sheet-findings td { padding: 8px 5px; border-bottom: 1px solid #cbd5db; overflow-wrap: anywhere; }
+.sheet-findings th { background: #e6edf0; }
+.sheet-findings .injury-card { background: none; border: 0; }
+.sheet-findings .sheet-alert { color: #9c2435; font-weight: 700; }
 @media (max-width: 720px) {
   #chart-app { padding: 10px; }
-  .chart-content { padding: 18px; }
+  .chart-content { padding: 6px 18px 18px; }
   .chart-columns { grid-template-columns: minmax(0, 1fr); }
   .chart-list { max-height: 180px; }
 }
+
+.sheet-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 34%); gap: 16px; align-items: start; }
+.sheet-record { min-width: 0; }
+.sheet-map { margin: 16px 0 0; padding: 10px 6px; border: 1px solid #cbd5db; border-radius: 5px; background: #eef3f4; text-align: center; }
+.sheet-map figcaption { font-size: 12px; font-weight: 700; }
+.sheet-map svg { display: block; width: 100%; max-width: 200px; margin: 12px auto; }
+.sheet-map [data-part] { fill: #c9d7dc; stroke: #647f8c; stroke-width: 1; }
+.sheet-map [data-part].injured { fill: #e98186; stroke: #9c2435; }
+@media (max-width: 480px) {
+  .sheet-layout { grid-template-columns: minmax(0, 1fr) minmax(76px, 26%); gap: 8px; }
+  .sheet-map { margin-top: 0; }
+}
+.chart-panel > header { flex-wrap: wrap; gap: 12px; }
+.chart-header-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 12px 24px; margin-left: auto; }
+.chart-panel .chart-search { margin: 0; }
+#chart-treat { white-space: nowrap; }
+.tablet-home:hover { background: #e7eef0; }
+.treatment-screen {
+  max-width: 760px;
+  margin: clamp(8px, 4vh, 42px) auto;
+  border-radius: 16px;
+  padding: clamp(16px, 4vw, 36px);
+  box-shadow: 0 16px 42px #0004;
+}
+.treatment-screen .sheet-heading { padding-bottom: 16px; border-bottom: 2px solid #35665f; }
+.treatment-screen .secondary { color: #183349; }
+.treatment-patient { margin: 20px 0; padding: 12px 16px; background: #e8f1ef; border-left: 3px solid #35665f; border-radius: 4px; }
+.treatment-patient span { color: #35665f; font-size: 12px; font-weight: 700; }
+#treatment-patient { margin: 3px 0 0; font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
+#chart-treatment { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: stretch; }
+#chart-treatment label { grid-column: 1 / -1; font-size: 13px; font-weight: 700; }
+#chart-treatment button { background: #245e58; border-color: #245e58; color: #fff; }
+#chart-treatment button:hover:not(:disabled) { background: #31766d; }
+@media (max-width: 520px) { #chart-treatment { grid-template-columns: minmax(0, 1fr); } }
+#chart-treatment select { min-width: 0; max-width: 100%; padding: 10px 12px; border: 1px solid #a4afb8; border-radius: 7px; background: #fff; color: #183349; font: inherit; }
+#chart-treatment-result { margin: 14px 0 0; padding: 10px 12px; background: #eef3f4; border-radius: 6px; overflow-wrap: anywhere; }
+#chart-treatment-result:empty { display: none; }
+.treatment-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 34%); gap: 20px; margin-bottom: 20px; }
+.treatment-workspace p { margin: 8px 0 12px; color: #4b6472; font-size: 12px; }
+#treatment-tools { display: grid; gap: 8px; }
+.treatment-tool { padding: 12px; border: 1px solid #a9c4bd; border-radius: 8px; background: #edf5f2; color: #214741; text-align: left; cursor: grab; }
+.treatment-tool:active { cursor: grabbing; }
+#treatment-map { margin: 0; }
+.treatment-mode #chart-body-map [data-part].drop-ready { fill: #67d9bc; stroke: #176956; stroke-width: 2; }
+.treatment-mode #chart-body-map [data-part].drop-ready:hover { fill: #a3f2d8; }
+.sheet-record { position: relative; }
+.treatment-mode .chart-list-section,
+.treatment-mode #chart-detail > .sheet-heading,
+.treatment-mode .sheet-record-content {
+  opacity: .10;
+}
+.treatment-mode .chart-list-section { pointer-events: none; }
+.treatment-mode #chart-detail { border-color: #fff; }
+.treatment-mode .sheet-map { border-color: #fff; background: #eef3f4; box-shadow: 0 0 0 1px #fff; }
+.treatment-mode .sheet-map figcaption { color: #c4cdd1; }
+.treatment-screen {
+  position: absolute;
+  z-index: 1;
+  inset: -20px 0 auto;
+  max-width: none;
+  margin: 0;
+  padding: clamp(10px, 2vw, 20px);
+  border: 1px solid #536c79;
+  border-radius: 12px;
+  background: #14242f;
+  box-shadow: 0 18px 44px #08151b70;
+}
+.treatment-mode .sheet-record-content { pointer-events: none; }
+.treatment-workspace { display: block; margin-bottom: 12px; }
+.treatment-screen .sheet-heading { flex-wrap: wrap; margin: -4px -4px 12px; padding: 6px 8px 10px; border-bottom: 1px solid #b8ccc8; }
+.treatment-screen .sheet-heading h2 { font-size: 17px; }
+.treatment-screen .treatment-patient { margin: 8px 0; padding: 6px 10px; }
+.treatment-screen #treatment-patient { font-size: 14px; }
+#treatment-tools { grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr)); }
+.treatment-tool { min-height: 44px; font-size: 12px; }
+.treatment-mode .chart-content { padding-bottom: 280px; }
+
+@media (min-width: 721px) {
+  .chart-columns { container-type: inline-size; }
+  .treatment-screen { left: calc(-1 * (max(210px, (100cqw - 24px) / 3) + 24px)); }
+}
+.treatment-tool { touch-action: none; user-select: none; }
+.treatment-drag-preview {
+  position: fixed;
+  z-index: 9999;
+  transform: translate(10px, 10px);
+  pointer-events: none;
+  padding: 10px 14px;
+  border: 1px solid #8cd6c3;
+  border-radius: 8px;
+  background: #245e58;
+  color: #fff;
+  box-shadow: 0 6px 18px #0005;
+  font-size: 13px;
+}
+#treatment-tools { grid-template-columns: repeat(auto-fill, 88px); }
+.treatment-tool, .treatment-drag-preview {
+  box-sizing: border-box;
+  width: 88px;
+  height: 88px;
+  display: grid;
+  grid-template-rows: 42px 1fr;
+  align-items: center;
+  justify-items: center;
+  padding: 6px;
+  gap: 4px;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.2;
+}
+.treatment-tool img, .treatment-drag-preview img { width: 42px; height: 42px; object-fit: contain; }
+.treatment-tool span, .treatment-drag-preview span { grid-row: 2; overflow-wrap: anywhere; }
+#chart-sidebar-patient { margin: 0 0 12px; overflow-wrap: anywhere; }
+
+#treatment-screen { color: #e8f3f4; }
+#treatment-screen .sheet-heading {
+  margin: 0 0 14px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid #3a525f;
+}
+#treatment-screen .sheet-heading h2 { font-size: 19px; letter-spacing: .05em; }
+#treatment-screen .secondary { color: #bcd0d7; border-color: #526c79; }
+#treatment-screen .treatment-patient { background: #1d3440; border-left-color: #71dac7; }
+#treatment-screen .treatment-patient span { color: #9eb8c2; }
+.treatment-workspace p { color: #afc4cc; }
+#treatment-tools { grid-template-columns: repeat(auto-fill, minmax(88px, 104px)); gap: 10px; }
+.treatment-tool, .treatment-drag-preview {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  grid-template-rows: minmax(0, 1fr) auto;
+  padding: 9px 7px 8px;
+  background: linear-gradient(155deg, #284452, #192c38);
+  border: 1px solid #53717e;
+  color: #e8f3f4;
+}
+.treatment-tool:hover:not(:disabled) { border-color: #71dac7; background: #31515d; }
+.treatment-tool:disabled { filter: saturate(.35); }
+.treatment-tool img, .treatment-drag-preview img { width: 48px; height: 48px; filter: drop-shadow(0 3px 4px #0007); }
+.treatment-drag-preview { width: 96px; box-shadow: 0 8px 22px #0008; border-color: #71dac7; }
+#chart-treatment-result { background: #203b45; color: #dbefed; }
+.treatment-mode #chart-body-map [data-part].drop-ready { filter: drop-shadow(0 0 3px #43b99c); }
+/* The chart is a sheet inside the tablet, with the treatment window above it. */
+#chart-detail {
+  border-color: #d6d1c5;
+  border-top: 3px solid #50746d;
+  border-radius: 3px;
+  background: #fffdf7;
+  box-shadow: 0 2px 0 #d6d1c5, 0 4px 0 #aea99d, 0 12px 28px #0005;
+}
+#chart-detail > .sheet-heading {
+  padding-bottom: 10px;
+  border-bottom: 1px solid #c9d0c8;
+}
+#chart-detail > .sheet-heading h2 { letter-spacing: .08em; }
+#chart-detail .sheet-fields { border-top-color: #8fa49a; }
+#chart-detail .sheet-fields div,
+#chart-detail .sheet-findings :is(th, td) { border-bottom-color: #dadbd2; }
+#chart-detail .sheet-findings th { background: #ecefe7; }
+#chart-app:not(.treatment-mode) #chart-detail .sheet-map { background: #f2f3ed; border-color: #d1d6ca; }
+.treatment-mode #chart-detail { border-color: #fff; }
+#treatment-screen .sheet-heading { position: relative; padding-right: 42px; }
+.treatment-close {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 38px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #e8f3f4;
+  font-size: 20px;
+  line-height: 1;
+}
+.treatment-close:hover, .treatment-close:active { background: #c42b3a; color: #fff; }
+.chart-stamps { display: flex; gap: 8px; }
+.chart-vitals { display: grid; grid-template-columns: repeat(auto-fit, minmax(42px, 1fr)); gap: 5px; margin-top: 8px; }
+.chart-vital { display: grid; justify-items: center; gap: 3px; font-size: 9px; white-space: nowrap; }
+.chart-vital b { display: grid; place-items: center; width: 36px; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(closest-side, #f2f3ed 78%, transparent 80%), conic-gradient(#347d70 var(--vital), #d5ded7 0); font-size: 11px; }
+.chart-stamp {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  padding: 4px;
+  border: 1px solid #bdc1b3;
+  border-radius: 2px;
+  background: #f7f6ed;
+  color: #3d6157;
+  font-size: 11px;
+}
+.chart-stamp-mark {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  aspect-ratio: 1;
+  border: 1px dashed #a4afa3;
+  border-radius: 50%;
+  font-weight: 700;
+}
+.chart-stamp:hover:not(:disabled) { border-color: #50746d; background: #edf3e9; }
+.chart-stamp.stamped { opacity: 1; }
+.chart-stamp.stamped .chart-stamp-mark {
+  border: 3px double currentColor;
+  color: #a4313a;
+  font-family: 'Yu Mincho', 'MS Mincho', serif;
+  font-size: 12px;
+  font-weight: 800;
+  transform: rotate(-9deg);
+}
+#chart-revive.stamped .chart-stamp-mark { transform: rotate(6deg); }
+.chart-body-figure { position: relative; width: min(100%, 200px); margin: 12px auto; }
+.chart-body-figure svg { margin: 0; }
+#chart-health {
+  position: absolute;
+  top: 8%;
+  right: calc(62.5% + 12px);
+  transform: translateY(-50%);
+}
+#chart-health .chart-vital b { width: clamp(30px, 4vw, 44px); }
+.treatment-mode #chart-health.drop-ready b { outline: 2px solid #53d9ad; box-shadow: 0 0 10px #53d9ad; }
+
+#chart-revive.unnecessary .chart-stamp-mark { color: #727976; }
+
+.chart-supplies { margin-top: 20px; }
+#chart-supplies-empty { margin: 8px 0 0; font-size: 12px; color: #4b6472; }
+#chart-supplies-table :last-child:is(th, td) { width: 24%; text-align: right; }
+
+#tablet-shutter {
+  position: absolute;
+  z-index: 5;
+  inset: 13px calc(var(--tablet-side) + 9px) 13px 17px;
+  border-radius: 17px;
+  background: #010305;
+  box-shadow: inset 0 -2px 6px #427d7880;
+  clip-path: inset(0 0 100% 0);
+  pointer-events: none;
+}
+@media (max-width: 720px) {
+  #tablet-shutter { inset: 11px calc(var(--tablet-side) + 5px) 11px 7px; }
+}
+#chart-supplies-table :is(td, th):nth-child(n + 2) { text-align: right; }
+#chart-supplies-table tfoot td { font-weight: 800; }
+
+.chart-billing-window { width: min(420px, 90vw); padding: 22px; border: 1px solid #536c79; border-radius: 12px; background: #14242f; color: #e8f3f4; box-shadow: 0 18px 44px #08151b70; }
+.chart-billing-window::backdrop { background: #07101680; }
+.chart-billing-window form { display: grid; gap: 14px; }
+.chart-billing-window p { margin: 0; }
+.chart-billing-window label { display: grid; gap: 6px; }
+.chart-billing-window select { padding: 8px; border-radius: 5px; font: inherit; }
+#chart-bill-result { color: #ffb7b7; }
+.sheet-map [data-part].healed:not(.injured) { fill: #75cba5; stroke: #30765a; }

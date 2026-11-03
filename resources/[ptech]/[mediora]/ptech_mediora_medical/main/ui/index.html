@@ -17,27 +17,127 @@
 </main>
 <main id="chart-app" hidden>
   <section class="panel chart-panel" role="dialog" aria-modal="true" aria-labelledby="chart-heading">
-    <header><div class="brand"><span class="cross">✚</span><div>P-TECH <span>MEDIORA</span><small id="chart-heading">カルテ</small></div></div><button id="close-charts" class="icon-button" aria-label="カルテを閉じる">×</button></header>
-    <div class="chart-content">
-      <form id="chart-search" class="chart-search">
+    <header><div class="brand"><span class="cross">✚</span><div>P-TECH <span>MEDIORA</span><small id="chart-heading">カルテ</small></div></div><div class="chart-header-actions"><form id="chart-search" class="chart-search">
         <label for="chart-patient-id">患者ID</label>
         <input id="chart-patient-id" type="number" min="1" step="1" inputmode="numeric" placeholder="サーバーID" required>
         <button class="primary" type="submit">カルテを確認</button>
-      </form>
+      </form></div></header>
+    <div id="tablet-shutter" aria-hidden="true"></div>
+    <button id="close-charts" class="tablet-home" type="button" aria-label="カルテを閉じる"></button>
+    <div class="chart-content">
+
+
       <p id="chart-notice" class="notice" role="status">患者IDを入力してカルテを確認してください。</p>
-      <div id="chart-patient" hidden><h1 id="chart-patient-name"></h1><p id="chart-patient-label" class="muted"></p></div>
-      <div class="chart-columns">
-        <section class="chart-list-section" aria-labelledby="chart-list-heading"><h2 id="chart-list-heading">診察結果一覧</h2><div id="chart-list" class="chart-list"></div></section>
+      <div id="chart-columns" class="chart-columns">
+        <section class="chart-list-section" aria-labelledby="chart-list-heading"><h1 id="chart-sidebar-patient" hidden></h1><h2 id="chart-list-heading">診察履歴</h2><div id="chart-list" class="chart-list"></div></section>
         <section id="chart-detail" class="chart-detail" aria-label="選択したカルテ" hidden>
-          <h2>診察記録</h2><p id="chart-issued" class="muted"></p><p id="chart-examiner"></p><p id="chart-death"></p>
-          <p id="chart-observation" class="muted"></p><div id="chart-injuries" class="injury-grid"></div>
+          <div class="sheet-heading"><h2>診療記録</h2>
+            <div class="chart-stamps">
+              <button id="chart-treat" class="chart-stamp" type="button" hidden><span class="chart-stamp-mark">治療</span></button>
+              <button id="chart-revive" class="chart-stamp" type="button"><span class="chart-stamp-mark">蘇生</span></button>
+              <button id="chart-bill" class="chart-stamp" type="button"><span class="chart-stamp-mark">請求</span></button>
+            </div>
+          </div>
+          <dialog id="chart-billing-window" class="chart-billing-window" aria-labelledby="chart-billing-heading">
+            <form id="chart-billing-form">
+              <div class="sheet-heading"><h2 id="chart-billing-heading">医療費の請求</h2><button id="chart-billing-close" class="icon-button" type="button" aria-label="請求画面を閉じる">×</button></div>
+              <p id="chart-billing-patient"></p>
+              <label id="chart-billing-revive-field">蘇生区分
+                <select id="chart-billing-revive">
+                  <option value="">選択してください</option>
+                  <option value="field">現場蘇生 · 80万円</option>
+                  <option value="hospital">院内蘇生 · 40万円</option>
+                  <option value="police">警察蘇生 · 30万円</option>
+                  <option value="jail">牢屋蘇生 · 20万円</option>
+                </select>
+              </label>
+              <p>請求合計 <strong id="chart-billing-total"></strong></p>
+              <p id="chart-bill-result" role="status" hidden></p>
+              <button id="chart-billing-submit" type="submit" class="primary">請求を送信</button>
+            </form>
+          </dialog>
+          <p id="chart-revive-result" role="status" hidden></p>
+          <div class="sheet-layout">
+            <div class="sheet-record">
+      <section id="treatment-screen" class="treatment-screen" aria-labelledby="treatment-heading" hidden>
+        <div class="sheet-heading">
+          <h2 id="treatment-heading">治療道具</h2>
+          <button id="treatment-back" type="button" class="treatment-close" aria-label="治療ウィンドウを閉じる" title="閉じる">×</button>
+        </div>
+        <div class="treatment-patient"><span>対象患者</span><p id="treatment-patient"></p></div>
+        <div class="treatment-workspace">
+          <div><p>道具を負傷部位へドラッグ</p><div id="treatment-tools"></div></div>
+        </div>
+        <form id="chart-treatment" hidden>
+          <label for="chart-treatment-injury">処置する傷と使用する道具</label>
+          <select id="chart-treatment-injury" required></select>
+          <button type="submit" class="primary">道具を使用</button>
+        </form>
+        <p id="chart-treatment-result" role="status"></p>
+      </section>
+            <div class="sheet-record-content">
+          <dl class="sheet-fields">
+            <div><dt>患者氏名</dt><dd id="chart-patient-name"></dd></div>
+            <div><dt>患者ID</dt><dd id="sheet-id"></dd></div>
+            <div><dt>診察日時</dt><dd id="chart-issued"></dd></div>
+            <div><dt>診察者</dt><dd id="chart-examiner"></dd></div>
+          </dl>
+          
+          <h3 id="chart-findings-heading">診察所見</h3>
+          <p id="chart-observation"></p>
+          <table class="sheet-findings">
+            <thead><tr><th scope="col">部位</th><th scope="col">損傷</th><th scope="col">重症度</th><th scope="col">出血</th></tr></thead>
+            <tbody id="chart-injuries"></tbody>
+          </table>
+          <section id="chart-supplies" class="chart-supplies" hidden aria-labelledby="chart-supplies-heading">
+            <h3 id="chart-supplies-heading">治療明細</h3>
+            <p id="chart-supplies-empty">使用した道具はありません。</p>
+            <table id="chart-supplies-table" class="sheet-findings" hidden>
+              <thead><tr><th scope="col">項目</th><th scope="col">数量</th><th scope="col">単価</th><th scope="col">金額</th></tr></thead>
+              <tbody id="chart-supplies-list"></tbody><tfoot><tr><th colspan="3" scope="row">合計</th><td id="chart-supplies-total"></td></tr></tfoot>
+            </table>
+          </section>
+            </div>
+            </div>
+            <figure class="sheet-map">
+              <figcaption>負傷部位</figcaption>
+              <div class="chart-body-figure"><svg id="chart-body-map" viewBox="0 0 120 210" aria-hidden="true">
+                <circle data-part="head" cx="60" cy="22" r="15"/>
+                <path data-part="upper_body" d="M41 42 Q60 36 79 42 L76 91 H44 Z"/>
+                <path data-part="lower_body" d="M44 95 H76 L80 117 Q60 130 40 117 Z"/>
+                <path data-part="right_arm" d="M37 44 L28 48 L15 108 Q15 115 22 116 L28 112 L40 78 Z"/>
+                <path data-part="left_arm" d="M83 44 L92 48 L105 108 Q105 115 98 116 L92 112 L80 78 Z"/>
+                <path data-part="right_leg" d="M40 122 L57 129 L53 194 Q48 203 35 198 Z"/>
+                <path data-part="left_leg" d="M80 122 L63 129 L67 194 Q72 203 85 198 Z"/>
+              </svg><div id="chart-health"></div></div>
+              <div id="chart-vitals" class="chart-vitals" aria-label="現在の患者状態"></div>
+            </figure>
+          </div>
         </section>
       </div>
     </div>
-    <footer><span class="footer-note"><i></i>診察時点の記録 · リソース／サーバー再起動で消去</span><button id="close-charts-bottom" class="secondary">閉じる</button></footer>
   </section>
 </main>
 <section id="examination-status" class="examination-status" role="status" hidden>診察されています</section>
 <template id="injury-template"><article class="injury-card"><div class="injury-top"><span class="body-name"></span><span class="kind"></span></div><div class="measure"><span>重症度</span><div class="segments severity-segments"></div><b class="severity-value"></b></div><div class="measure"><span>出血</span><div class="segments bleed-segments"></div><b class="bleed-value"></b></div></article></template>
+<div id="exam-progress" hidden aria-hidden="true">
+  <img id="treatment-progress-tool" alt="" hidden>
+  <svg class="revive-progress-icon" viewBox="0 0 64 48" width="64" height="48">
+    <rect x="5" y="5" width="54" height="38" rx="6" fill="#183441" stroke="#71dac7" stroke-width="1.5"/>
+    <path class="revive-heart" d="M32 36C24 30 17 25 17 18a8 8 0 0 1 15-4 8 8 0 0 1 15 4c0 7-7 12-15 18Z" fill="#ef7989"/>
+    <path d="M13 24h11l4-6 5 11 4-5h14" fill="none" stroke="#fff4f5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <svg class="exam-progress-icon" viewBox="0 0 64 48" width="64" height="48">
+    <rect x="6" y="5" width="52" height="38" rx="6" fill="#183441" stroke="#71dac7" stroke-width="1.5"/>
+    <rect x="11" y="10" width="42" height="28" rx="3" fill="#0d1d27"/>
+    <path d="M16 16h6m-3-3v6" stroke="#71dac7" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M26 16h20" stroke="#365766" stroke-width="1.5" stroke-linecap="round"/>
+    <g stroke="#71dac7" stroke-width="1.5" stroke-linecap="round">
+      <path class="exam-typing" d="M16 24h28"/>
+      <path class="exam-typing exam-typing-next" d="M16 30h19"/>
+    </g>
+  </svg>
+  <div><strong id="exam-progress-label">診察結果を入力中</strong><div class="exam-track"><div id="exam-fill"></div></div></div>
+</div>
 <script src="app.js"></script>
 </body></html>

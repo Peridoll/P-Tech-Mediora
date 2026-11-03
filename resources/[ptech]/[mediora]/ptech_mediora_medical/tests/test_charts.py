@@ -110,24 +110,19 @@ class ChartsTest(unittest.TestCase):
         assert(invoke('createChart', 1, 2).error) -- 保存の再実行は不可
         """)
 
-    def test_target_opens_native_patient_chart_without_manager(self):
+    def test_target_only_offers_diagnosis(self):
         self.check("""
-        assert(targets[2].canInteract(2))
-        targets[2].onSelect({entity = 2})
-        assert(latest().action == 'charts:open' and latest().data.targetId == 2)
-        assert(nui('getCharts', {targetId = 2}).patient.serverId == 2)
+        assert(#targets == 1 and targets[1].name == 'ptech_mediora_medical:diagnose')
         """)
 
-    def test_unsupported_format_shows_raw_data_without_saving(self):
+    def test_unsupported_format_saves_patient_state_without_inventing_injuries(self):
         self.check("""
         injuries = {unexpected = {wounds = 'unknown'}}
         diagnose()
-        assert(latest().action == 'open')
-        assert(latest().data.mode == 'unsupported')
-        assert(latest().data.details:find('injuries.unexpected.wounds: unknown', 1, true))
-        assert(latest().data.canOpenCharts)
-        assert(#invoke('getPatientCharts', 1, 2).charts == 0)
-        assert(invoke('createChart', 1, 2).error)
+        assert(latest().action == 'charts:open')
+        local chart = invoke('getPatientCharts', 1, 2).charts[1]
+        assert(chart and #chart.injuries == 0)
+        assert(chart.observationStatus:find('未取得', 1, true))
         """)
 
     def test_empty_observation_never_creates_healthy_chart(self):

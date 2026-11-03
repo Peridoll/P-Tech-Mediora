@@ -36,11 +36,22 @@ local function cancelExamination(target)
     lib.callback.await('ptech_mediora_medical:cancel', false, target)
 end
 
+local function clearExaminationProgress(examination)
+    if not examination.progressing then return end
+    examination.progressing = false
+    SendNUIMessage({ action = 'exam-progress' })
+    if examination.animation then
+        local animation = examination.animation
+        StopAnimTask(examination.ped, animation.dict, animation.clip, 2.0)
+    end
+    if examination.prop then DeleteEntity(examination.prop) end
+end
+
 local function cancelActiveExamination()
     local examination = activeExamination
     activeExamination = nil
     if examination then
-        if examination.progressing and lib.progressActive() then lib.cancelProgress() end
+        clearExaminationProgress(examination)
         if examination.target then
             TriggerServerEvent('ptech_mediora_medical:cancelExamination', examination.target)
         end
@@ -81,13 +92,6 @@ local function startDiagnosis(target)
         local confirm = lib.callback.await('ptech_mediora_medical:confirm', false, target, injuries, success)
         if activeExamination ~= examination then return end
         if not confirm or confirm.error then
-            if confirm and confirm.code == 'unsupported_injuries' then
-                MedicalUI.show({
-                    title = '診察 — ID ' .. target, targetId = target,
-                    success = success, injuries = injuries, death = auth.death, mode = 'unsupported',
-                    refresh = function() startDiagnosis(target) end,
-                })
-            end
             notify(confirm and confirm.error or '診察情報を確認できません'); return
         end
         if Config.Debug then
@@ -95,18 +99,48 @@ local function startDiagnosis(target)
                 :format(target, tostring(confirm.duration)))
         end
 
+        local ped = PlayerPedId()
+        examination.ped = ped
         examination.progressing = true
-        local finished = lib.progressCircle({
-            duration = confirm.duration,
-            label = Config.Examination.Label,
-            position = 'bottom',
-            canCancel = true,
-            useWhileDead = false,
-            disable = { move = true, car = true, combat = true },
-            anim = Config.Examination.Animation,
-            prop = Config.Examination.Prop,
-        })
-        examination.progressing = false
+        SendNUIMessage({ action = 'exam-progress', duration = confirm.duration })
+        local deadline = GetGameTimer() + confirm.duration
+        local animation = Config.Examination.Animation
+        local prop = Config.Examination.Prop
+        local model = prop and joaat(prop.model)
+        local hasAnimation = animation and DoesAnimDictExist(animation.dict)
+        local hasProp = model and IsModelValid(model)
+        if hasAnimation then RequestAnimDict(animation.dict) end
+        if hasProp then RequestModel(model) end
+
+        local finished = false
+        while activeExamination == examination and PlayerPedId() == ped and not IsEntityDead(ped) do
+            DisableAllControlActions(0)
+            EnableControlAction(0, 1, true)
+            EnableControlAction(0, 2, true)
+            if IsDisabledControlJustPressed(0, 73) then break end
+            if GetGameTimer() >= deadline then
+                finished = true
+                break
+            end
+            if hasAnimation and not examination.animation and HasAnimDictLoaded(animation.dict) then
+                TaskPlayAnim(ped, animation.dict, animation.clip, 3.0, -3.0, -1, animation.flag or 49, 0.0, false, false, false)
+                examination.animation = animation
+            end
+            if hasProp and not examination.prop and HasModelLoaded(model) then
+                local coords = GetEntityCoords(ped)
+                local object = CreateObject(model, coords.x, coords.y, coords.z, false, false, false)
+                if object ~= 0 then
+                    examination.prop = object
+                    AttachEntityToEntity(object, ped, GetPedBoneIndex(ped, prop.bone or 60309),
+                        prop.pos.x, prop.pos.y, prop.pos.z, prop.rot.x, prop.rot.y, prop.rot.z,
+                        true, true, false, true, 1, true)
+                end
+            end
+            Wait(0)
+        end
+        if hasAnimation then RemoveAnimDict(animation.dict) end
+        if hasProp then SetModelAsNoLongerNeeded(model) end
+        clearExaminationProgress(examination)
         if activeExamination ~= examination then return end
         if not finished then
             notify('診察を中止しました', 'inform')
@@ -115,7 +149,7 @@ local function startDiagnosis(target)
 
         local snapshot = {
             title = '診察 — ID ' .. target, targetId = target, success = success,
-            death = confirm.death, injuries = injuries,
+            death = confirm.death, injuries = injuries, observedInjuries = confirm.injuries,
             refresh = function() startDiagnosis(target) end,
         }
         -- 保存前の患者・距離確認と、患者側の表示解除はサーバーが行う。
@@ -136,8 +170,7 @@ local function startDiagnosis(target)
                 if activeExamination == examination and displayed == false then MedicalUI.show(snapshot) end
             end
         elseif chart and chart.noChart then
-            MedicalUI.show(snapshot)
-            notify(chart.message or '確認できる負傷情報がないため、カルテは作成しませんでした', 'inform')
+            notify(chart.message or '診察が完了しました。確認できる傷はないようです。', 'inform')
         elseif not chart or chart.error then
             MedicalUI.show(snapshot)
             notify(chart and chart.error or 'カルテを作成できませんでした')
@@ -147,13 +180,14 @@ local function startDiagnosis(target)
     end)
     -- 中止・コールバック例外・演出失敗でも、患者向け表示と開始許可を片付ける。
     local current = activeExamination == examination
+    clearExaminationProgress(examination)
     if current then
         if authorizedTarget then pcall(cancelExamination, authorizedTarget) end
         if activeExamination == examination then activeExamination = nil end
     end
     if not ok and current then
-        if Config.Debug then print('[ptech_mediora_medical] ' .. tostring(err)) end
-        notify('診察に失敗しました。依存リソースの起動を確認してください')
+        print('[ptech_mediora_medical] examination failed: ' .. tostring(err))
+        notify('診察に失敗しました。詳細は F8 コンソールを確認してください')
     end
 end
 
@@ -207,21 +241,6 @@ if Config.Target.Enabled then
                 if target then startDiagnosis(target) end
             end,
         },
-        {
-            name = 'ptech_mediora_medical:treat',
-            icon = 'fa-solid fa-tablets',
-            label = '治療する',
-            distance = math.min(Config.Target.Distance, Config.Distance),
-            canInteract = function(entity)
-                return not activeExamination and serverIdFromPed(entity) ~= nil
-                    and Medical.allowed(exports.qbx_core:GetPlayerData())
-            end,
-            onSelect = function(data)
-                local target = data and serverIdFromPed(data.entity)
-                if not target then return end
-                MedicalUI.openCharts(target)
-            end,
-        },
     })
 end
 
@@ -230,6 +249,6 @@ AddEventHandler('onResourceStop', function(resource)
     cancelActiveExamination()
     if Config.Target.Enabled then
         exports.ox_target:removeGlobalPlayer('ptech_mediora_medical:diagnose')
-        exports.ox_target:removeGlobalPlayer('ptech_mediora_medical:treat')
     end
 end)
+

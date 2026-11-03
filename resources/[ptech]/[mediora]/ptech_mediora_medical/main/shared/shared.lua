@@ -31,8 +31,30 @@ function Medical.report(injuries, success)
             rows[#rows + 1] = { part = part, kind = injury.type, severity = level(data.level), bleed = level(data.bleed) }
         end
     end
-    return { rows = rows, status = next(injuries) == nil and '返却情報なし（健康の保証ではありません）'
-        or #rows == 0 and '未対応形式' or 'クライアント観察記録' }
+    if type(injuries.injury) == 'string' and kinds[injuries.injury] then
+        local part
+        for _, known in ipairs(parts) do
+            if injuries.location == known then part = known; break end
+        end
+        local duplicate = false
+        for _, row in ipairs(rows) do
+            if row.kind == injuries.injury and (not part or row.part == part) then
+                duplicate = true
+                break
+            end
+        end
+        if not duplicate then
+            rows[#rows + 1] = {
+                part = part, kind = injuries.injury,
+                body = not part and injuries.injury ~= 'beat' and '上半身（仮）' or nil,
+                severity = part == 'head' and 3 or level(injuries.level) or 1,
+                cause = true,
+            }
+        end
+    end
+    local unsupported = next(injuries) ~= nil and #rows == 0
+    return { rows = rows, unsupported = unsupported, status = next(injuries) == nil and '返却情報なし（健康の保証ではありません）'
+        or unsupported and '負傷情報は未取得（未対応の返却形式）' or 'クライアント観察記録' }
 end
 
 function Medical.jobAllowed(name)

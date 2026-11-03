@@ -12,3 +12,77 @@
   font-size: 16px;
   pointer-events: none;
 }
+
+#exam-progress {
+  position: fixed;
+  left: 50%;
+  bottom: 15vh;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px 8px 10px;
+  border: 1px solid #385968;
+  border-radius: 12px;
+  background: #111f29;
+  box-shadow: 0 8px 24px #0008;
+  color: #e6f2f2;
+  font-size: 13px;
+  pointer-events: none;
+}
+.exam-track { width: 150px; height: 3px; margin-top: 8px; background: #294452; border-radius: 2px; }
+#exam-fill { height: 100%; background: #71dac7; border-radius: inherit; transform-origin: left; }
+.exam-typing {
+  stroke-dasharray: 28;
+  animation: exam-type-first var(--exam-cycle, 1s) linear 2 both;
+}
+.exam-typing-next {
+  stroke-dasharray: 19;
+  animation-name: exam-type-second;
+}
+@keyframes exam-type-first {
+  0% { stroke-dashoffset: 28; animation-timing-function: steps(7, end); }
+  42%, 95% { stroke-dashoffset: 0; animation-timing-function: step-end; }
+  96%, 100% { stroke-dashoffset: 28; }
+}
+@keyframes exam-type-second {
+  0%, 42% { stroke-dashoffset: 19; animation-timing-function: steps(5, end); }
+  84%, 95% { stroke-dashoffset: 0; animation-timing-function: step-end; }
+  96%, 100% { stroke-dashoffset: 19; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .exam-typing { animation: none; }
+}
+.revive-progress-icon, .revive-progress .exam-progress-icon { display: none; }
+.revive-progress .revive-progress-icon { display: block; }
+.revive-progress #exam-fill { background: #ef7989; }
+.revive-heart {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: revive-heartbeat .92s ease-in-out infinite;
+}
+@keyframes revive-heartbeat {
+  0%, 24%, 49%, 100% { transform: scale(1); }
+  12% { transform: scale(1.14); }
+  35% { transform: scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .revive-heart { animation: none; }
+}
+#treatment-progress-tool { display: none; }
+.tool-progress #treatment-progress-tool {
+  display: block;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  animation: treatment-tool-apply .85s ease-in-out infinite;
+}
+.tool-progress .exam-progress-icon { display: none; }
+.tool-progress #treatment-progress-tool:is([data-tool="forceps"], [data-tool="shot"], [data-tool="needle"], [data-tool="stabbed"]) {
+  animation-name: treatment-tool-precision;
+}
+@keyframes treatment-tool-apply { 50% { transform: translateY(-3px) scale(1.08); } }
+@keyframes treatment-tool-precision { 50% { transform: translate(3px, 2px) rotate(-12deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .tool-progress #treatment-progress-tool { animation: none; }
+}

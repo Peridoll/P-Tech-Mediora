@@ -76,14 +76,15 @@ Config = {
     Label    = '診察しています',
 
     Animation = {
-      dict = 'amb@world_human_stand_mobile@male@standing@base',
+      dict = 'amb@medic@standing@kneel@base',
       clip = 'base',
+      flag = 1,
     },
 
     Prop = {
       model = 'prop_cs_tablet',
-      pos   = { x = 0.03, y = 0.002, z = -0.02 },
-      rot   = { x = 10.0, y = 160.0, z = 0.0 },
+      pos   = vec3(0.03, 0.002, -0.02),
+      rot   = vec3(10.0, 160.0, 0.0),
     },
   },
 
