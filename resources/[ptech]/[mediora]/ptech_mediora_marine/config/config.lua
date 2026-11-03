@@ -1,5 +1,13 @@
 Config = {}
 
+-- 勤務中のEMSがアイテムで装備できるフィン。速度上昇は水中遊泳時のみ。
+Config.Fins = {
+    Enabled = true,
+    Item = 'ptech_mediora_rescue_fins',
+    Jobs = { 'ambulance' },
+    SwimMultiplier = 1.35, -- GTAの上限に合わせて1.0～1.49。
+}
+
 -- 所持品ではない、全プレイヤー共通の水難用浮上装置。
 -- 死亡／laststandをサーバーが確認した時点から Countdown 秒後、
 -- その瞬間に水中または水面にいる本人だけが長押しで起動できる。
