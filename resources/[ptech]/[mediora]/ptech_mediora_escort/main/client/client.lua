@@ -56,7 +56,7 @@ end
 local function clearAcceptance()
     if not accepting then return end
     accepting=false
-    StopAnimTask(cache.ped,'missfbi_s4mop','guard_idle_a',1.0)
+    StopAnimTask(cache.ped,'missfam5_yoga','a2_pose',1.0)
     TriggerServerEvent('ptech_mediora_escort:server:accept',false)
 end
 local function toggleAccept()
@@ -65,27 +65,42 @@ local function toggleAccept()
     accepting=true
     TriggerServerEvent('ptech_mediora_escort:server:accept',true)
     -- 上半身のみの待機姿勢。歩く・走る操作は維持。
-    if loadAnim('missfbi_s4mop') then TaskPlayAnim(cache.ped,'missfbi_s4mop','guard_idle_a',8.0,-8.0,-1,49,0,false,false,false) end
+    if loadAnim('missfam5_yoga') then TaskPlayAnim(cache.ped,'missfam5_yoga','a2_pose',8.0,-8.0,-1,49,0,false,false,false) end
+end
+local function vehicleStyle(s,v)
+    if v~=0 and (s.vehicleAllowed==false
+        or (s.vehicleAllowed=='bike' and not IsThisModelABike(GetEntityModel(v)))) then
+        return EscortRules.style(Config.DefaultStyle)
+    end
+    return s
 end
 local function styleNow()
     local s=EscortRules.style(currentStyle or selectedStyle)
     local v=GetVehiclePedIsIn(cache.ped,false)
-    if v~=0 and s.vehicleAllowed==false then return EscortRules.style(Config.DefaultStyle) end
-    return s
+    return vehicleStyle(s,v)
 end
-local function applyCarryAnimation()
+local function applyCarryAnimation(replay)
     if not carrying then return end
     local s=styleNow()
-    if not activeAnimation or activeAnimation.anim~=s.escorter.anim or activeAnimation.dict~=s.escorter.dict then
+    local v=GetVehiclePedIsIn(cache.ped,false)
+    if s.id=='fireman' and v~=0 and IsThisModelABike(GetEntityModel(v)) then return end
+    if replay or not activeAnimation or activeAnimation.anim~=s.escorter.anim or activeAnimation.dict~=s.escorter.dict then
         stopAnim();play(s.escorter)
     end
 end
+local takeNearbyPatient, putInNearbyKeyedVehicle
 local function startKey()
     if busyTransfer then return end
-    if carrying then TriggerServerEvent('ptech_mediora_escort:server:stop');return end
+    if carrying then
+        if not putInNearbyKeyedVehicle() then TriggerServerEvent('ptech_mediora_escort:server:stop') end
+        return
+    end
     if carriedBy then return end
     if IsPedInAnyVehicle(cache.ped,false) then
-        if ems() then TriggerServerEvent('ptech_mediora_escort:server:emsPickup') end
+        if ems() then
+            local vehicle=GetVehiclePedIsIn(cache.ped,false)
+            TriggerServerEvent('ptech_mediora_escort:server:emsPickup',NetworkGetNetworkIdFromEntity(vehicle),GetVehicleMaxNumberOfPassengers(vehicle))
+        end
         return
     end
     local nearest=nil;local dist=Config.NormalRange
@@ -94,14 +109,14 @@ local function startKey()
             local ped=GetPlayerPed(id)
             local sid=GetPlayerServerId(id)
             local n=#(GetEntityCoords(cache.ped)-GetEntityCoords(ped))
-            if n<dist and EscortRules.eligible(Player(sid).state,nil,GetEntityHealth(ped))
+            if n<dist and not IsPedInAnyVehicle(ped,false) and EscortRules.eligible(Player(sid).state,nil,GetEntityHealth(ped))
                 and not Player(sid).state.emsEscortedBy then dist=n;nearest=sid end
         end
     end
-    if nearest then TriggerServerEvent('ptech_mediora_escort:server:start',nearest)
-    else notify(Config.Text.noTarget) end
+    if nearest then TriggerServerEvent('ptech_mediora_escort:server:start',nearest);return end
+    takeNearbyPatient()
 end
-lib.addKeybind({name='ptech_mediora_escort',description='(ptech_mediora_escort) 担ぐ / 降ろす',defaultKey=Config.Key,onPressed=startKey})
+lib.addKeybind({name='ptech_mediora_escort',description='担ぐ / 降ろす',defaultKey=Config.Key,onPressed=startKey})
 
 local showCarryMenu, showDeniedMenu
 showCarryMenu = function()
@@ -112,7 +127,6 @@ showCarryMenu = function()
             onSelect=function()
                 selectedStyle=id
                 TriggerServerEvent('ptech_mediora_escort:server:style',id)
-                showCarryMenu()
             end}
     end
     lib.registerContext({id='ptech_escort_carry',title='担ぎ方',menu='ptech_escort_settings',options=options})
@@ -126,7 +140,6 @@ showDeniedMenu = function()
             onSelect=function()
                 denied[id]=not denied[id] or nil
                 TriggerServerEvent('ptech_mediora_escort:server:toggleDenied',id)
-                showDeniedMenu()
             end}
     end
     lib.registerContext({id='ptech_escort_denied',title='担がれ方',menu='ptech_escort_settings',options=options})
@@ -142,13 +155,13 @@ end
 local function setupRadial()
     if not lib.registerRadial then return end
     lib.registerRadial({id='ptech_escort_actions',items={
-        {label='担ぐ / 降ろす',icon='hand',onSelect=startKey},
-        {label='受け入れる',icon='hand-heart',onSelect=toggleAccept},
-        {label='設定',icon='gear',onSelect=showSettings},
+        {label='担ぐ / 降ろす',icon='people-carry',onSelect=startKey},
+        {label='受け入れる',icon='hands-helping',onSelect=toggleAccept},
+        {label='設定',icon='cog',onSelect=showSettings},
     }})
     pcall(lib.removeRadialItem,'medioraEscortCitizen')
     pcall(lib.removeRadialItem,'ptechEscortCitizen')
-    pcall(lib.addRadialItem,{id='ptechEscortCitizen',label='搬送',icon='hand-heart',menu='ptech_escort_actions'})
+    pcall(lib.addRadialItem,{id='ptechEscortCitizen',label='搬送',icon='people-carry',menu='ptech_escort_actions'})
 end
 RegisterNetEvent('ptech_mediora_escort:client:preferences',function(style,rejected)
     selectedStyle=type(style)=='string' and style or Config.DefaultStyle
@@ -166,24 +179,41 @@ RegisterNetEvent('ptech_mediora_escort:client:removeTarget',function(target,tick
 end)
 local function attachTo(owner,style)
     local s=EscortRules.style(style)
-    if GetVehiclePedIsIn(owner,false)~=0 and s.vehicleAllowed==false then s=EscortRules.style(Config.DefaultStyle) end
+    s=vehicleStyle(s,GetVehiclePedIsIn(owner,false))
     local bone=(s.bone and s.bone~=-1) and GetPedBoneIndex(owner,s.bone) or -1
     local p=s.pos or {0.27,0.15,0.63};local r=s.rot or {0,0,180}
     AttachEntityToEntity(cache.ped,owner,bone,p[1],p[2],p[3],r[1],r[2],r[3],false,false,false,true,2,true)
-    play(s.target)
+    local anim=s.target
+    if anim and down(cache.ped) then
+        anim={dict=anim.dict,anim=anim.anim,flag=(anim.flag or 49) | 32}
+    end
+    play(anim)
 end
-RegisterNetEvent('ptech_mediora_escort:client:getEscorted',function(owner,style,ticket)
+RegisterNetEvent('ptech_mediora_escort:client:getEscorted',function(owner,style,ticket,fromVehicle)
     clearAcceptance()
     carriedBy=owner;carriedTicket=ticket
-    if IsPedInAnyVehicle(cache.ped,false) then TaskLeaveVehicle(cache.ped,GetVehiclePedIsIn(cache.ped,false),16) end
+    local inVehicle=IsPedInAnyVehicle(cache.ped,false)
+    local restoreAfterExit=fromVehicle or inVehicle
+    if inVehicle then TaskLeaveVehicle(cache.ped,GetVehiclePedIsIn(cache.ped,false),16) end
     CreateThread(function()
         local priorMode=nil
         while carriedBy==owner and carriedTicket==ticket do
             local escorter=pedOf(owner)
-            if escorter~=0 and DoesEntityExist(escorter) then
+            if escorter~=0 and DoesEntityExist(escorter) and not IsPedInAnyVehicle(cache.ped,false) then
                 local mode=GetVehiclePedIsIn(escorter,false)~=0 and 'vehicle' or 'walk'
                 if priorMode~=mode or not IsEntityAttachedToEntity(cache.ped,escorter) then
                     stopAnim();attachTo(escorter,style);priorMode=mode
+                elseif restoreAfterExit then
+                    local anim=activeAnimation
+                    if anim and not IsEntityPlayingAnim(cache.ped,anim.dict,anim.anim,3) then
+                        restoreAfterExit=false
+                        DetachEntity(cache.ped,true,true)
+                        stopAnim()
+                        Wait(0)
+                        if carriedBy==owner and carriedTicket==ticket and DoesEntityExist(escorter) then
+                            attachTo(escorter,style)
+                        end
+                    end
                 end
             end
             Wait(Config.SyncInterval)
@@ -225,12 +255,13 @@ end)
 RegisterNetEvent('ptech_mediora_escort:client:seat',function(netId,seat)
     local vehicle=NetworkGetEntityFromNetworkId(netId)
     if vehicle==0 or not DoesEntityExist(vehicle) then return end
+    if seat<0 or seat>=GetVehicleMaxNumberOfPassengers(vehicle) or not IsVehicleSeatFree(vehicle,seat) then return end
     if IsEntityAttached(cache.ped) then DetachEntity(cache.ped,true,true) end
     carriedBy=nil;carriedTicket=nil;stopAnim()
     SetPedIntoVehicle(cache.ped,vehicle,seat)
 end)
 RegisterNetEvent('ptech_mediora_escort:client:seatGone',function()
-    if IsPedInAnyVehicle(cache.ped,false) then return end
+    if carriedBy or IsPedInAnyVehicle(cache.ped,false) then return end
     ClearPedTasks(cache.ped)
 end)
 local function seatPos(vehicle,seat)
@@ -250,20 +281,56 @@ local function freeSeat(vehicle)
     end
     return best
 end
+putInNearbyKeyedVehicle = function()
+    if IsPedInAnyVehicle(cache.ped,false) or GetResourceState('qbx_vehiclekeys')~='started' then return false end
+    local pos=GetEntityCoords(cache.ped)
+    local nearest,seat
+    local dist=Config.TargetDistance
+    for _,vehicle in ipairs(GetGamePool('CVehicle')) do
+        local d=#(pos-GetEntityCoords(vehicle))
+        if d<dist and NetworkGetEntityIsNetworked(vehicle) and GetEntitySpeed(vehicle)<=Config.VehicleStopSpeed
+            and exports.qbx_vehiclekeys:HasKeys(vehicle) then
+            local index=freeSeat(vehicle)
+            if index then nearest,seat,dist=vehicle,index,d end
+        end
+    end
+    if not nearest then return false end
+    TriggerServerEvent('ptech_mediora_escort:server:putInVehicle',NetworkGetNetworkIdFromEntity(nearest),seat,'key')
+    return true
+end
 local function patientSeat(vehicle)
     local pos=GetEntityCoords(cache.ped)
-    local best=nil;local dist=math.huge
+    local best,bestSeat;local dist=math.huge
     for seat=0,GetVehicleMaxNumberOfPassengers(vehicle)-1 do
         local ped=GetPedInVehicleSeat(vehicle,seat)
         if ped~=0 and IsPedAPlayer(ped) then
             local sid=GetPlayerServerId(NetworkGetPlayerIndexFromPed(ped))
             if EscortRules.eligible(Player(sid).state,nil,GetEntityHealth(ped)) then
                 local d=#(pos-seatPos(vehicle,seat))
-                if d<dist then best=sid;dist=d end
+                if d<dist then best=sid;bestSeat=seat;dist=d end
             end
         end
     end
-    return best
+    return best,bestSeat,dist
+end
+takeNearbyPatient = function()
+    local pos=GetEntityCoords(cache.ped)
+    local nearest,target,seat
+    local dist=Config.TargetDistance
+    for _,vehicle in ipairs(GetGamePool('CVehicle')) do
+        if #(pos-GetEntityCoords(vehicle))<=Config.TargetDistance+2 and GetEntitySpeed(vehicle)<=Config.VehicleStopSpeed then
+            local sid,patientIndex,d=patientSeat(vehicle)
+            if sid then
+                local min=GetModelDimensions(GetEntityModel(vehicle))
+                local rear=GetOffsetFromEntityInWorldCoords(vehicle,0.0,min.y,0.0)
+                d=math.min(d,#(pos-rear))
+                if d<dist then nearest,target,seat,dist=vehicle,sid,patientIndex,d end
+            end
+        end
+    end
+    if nearest then
+        TriggerServerEvent('ptech_mediora_escort:server:takeOut',NetworkGetNetworkIdFromEntity(nearest),target,seat)
+    end
 end
 if Config.UseTarget then
     exports.ox_target:addGlobalPlayer({
@@ -299,8 +366,8 @@ if Config.UseTarget then
                     and GetEntitySpeed(vehicle)<=Config.VehicleStopSpeed and patientSeat(vehicle)~=nil
             end,
             onSelect=function(data)
-                local sid=patientSeat(data.entity)
-                if sid then TriggerServerEvent('ptech_mediora_escort:server:takeOut',NetworkGetNetworkIdFromEntity(data.entity),sid) end
+                local sid,seat=patientSeat(data.entity)
+                if sid then TriggerServerEvent('ptech_mediora_escort:server:takeOut',NetworkGetNetworkIdFromEntity(data.entity),sid,seat) end
             end},
     })
 end
@@ -319,7 +386,18 @@ CreateThread(function()
         elseif accepting and IsControlJustPressed(0,Config.AcceptKey) then clearAcceptance() end
         if carrying then
             local v=IsPedInAnyVehicle(cache.ped,false)
-            if v~=lastInVehicle then applyCarryAnimation() end
+            if v~=lastInVehicle then
+                applyCarryAnimation(lastInVehicle and not v)
+                if v then
+                    local vehicle=GetVehiclePedIsIn(cache.ped,false)
+                    if vehicle~=0 and not IsThisModelABike(GetEntityModel(vehicle)) then
+                        local seat=freeSeat(vehicle)
+                        if seat then
+                            TriggerServerEvent('ptech_mediora_escort:server:putInVehicle',NetworkGetNetworkIdFromEntity(vehicle),seat,true)
+                        end
+                    end
+                end
+            end
             lastInVehicle=v
         end
     end
