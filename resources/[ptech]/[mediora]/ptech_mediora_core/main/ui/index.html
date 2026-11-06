@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="tablet.css">
     <title>Mediora Core</title>
 </head>
 <body style="background: transparent !important;">
@@ -16,6 +17,34 @@
         <div id="message" class="message"></div>
         <div id="track" class="track is-hidden"><div id="fill" class="fill"></div></div>
     </section>
+    <div id="tablet" hidden>
+        <section class="tablet-device" role="dialog" aria-modal="true" aria-label="Mediora タブレット">
+            <aside class="tablet-sidebar">
+                <div class="tablet-brand">M<span>MEDIORA<small>FIELD WORKSPACE</small></span></div>
+                <div class="tablet-nav-label">ワークスペース</div>
+                <nav aria-label="タブレットメニュー">
+                    <button data-page="home" class="selected">⌂ <span>ホーム</span></button>
+                    <button data-page="profile">◎ <span>マイプロフィール</span></button>
+                </nav>
+                <div class="tablet-sidebar-footer">P-Tech / Mediora<br><span>Core · ローカル</span></div>
+            </aside>
+            <main class="tablet-main">
+                <header class="tablet-topbar"><span>MEDIORA / CORE</span><div><time id="tablet-clock"></time><button id="tablet-close" aria-label="タブレットを閉じる">×</button></div></header>
+                <div class="tablet-content">
+                    <div class="tablet-page-heading"><div><p class="tablet-eyebrow">YOUR WORKSPACE</p><h1 id="tablet-page-title">ホーム</h1></div><button id="tablet-refresh">↻ 更新</button></div>
+                    <p id="tablet-status" role="status" aria-live="polite"></p>
+                    <section id="tablet-home">
+                        <div class="tablet-welcome"><span class="tablet-tag">MEDIORA TABLET</span><h2>現場と、あなたをつなぐ。</h2><p>勤務状況と活動の記録を、ひとつの場所に。</p><span id="tablet-duty" class="tablet-duty">取得待ち</span></div>
+                        <div class="tablet-stats"><article><span>保有ポイント</span><strong id="tablet-balance">—</strong><small>MP / Mediora Points</small></article><article><span>累計勤務時間</span><strong id="tablet-hours">—</strong><small>現在の勤務セッションを含む</small></article><article><span>累計獲得ポイント</span><strong id="tablet-earned">—</strong><small>MP / Total earned</small></article></div>
+                        <div class="tablet-note"><h3>ワークスペースについて</h3><p>マイプロフィールから、所属とこれまでの業務実績を確認できます。</p></div>
+                    </section>
+                    <section id="tablet-profile" hidden><article class="tablet-profile-card"><span class="tablet-tag">MY PROFILE</span><h2 id="tablet-name">—</h2><p id="tablet-job">—</p><p id="tablet-citizen">—</p></article><h3>業務実績</h3><dl id="tablet-activities"></dl></section>
+                </div>
+                <footer class="tablet-footer"><span>MEDIORA WORKSPACE</span><span>Esc で閉じる</span></footer>
+            </main>
+        </section>
+    </div>
     <script src="app.js"></script>
+    <script src="tablet.js"></script>
 </body>
 </html>

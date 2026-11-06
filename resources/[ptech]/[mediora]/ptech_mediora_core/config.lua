@@ -1,5 +1,9 @@
 Config = {}
 
+Config.Tablet = {
+    item = 'mediora_tablet',
+}
+
 Config.Points = {
     identifier = 'ptech_mediora_work_points',
     label = 'Mediora Points',

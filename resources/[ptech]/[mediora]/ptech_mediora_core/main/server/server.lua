@@ -436,6 +436,34 @@ exports('AddPoints', addPoints)
 exports('SpendPoints', spendPoints)
 exports('GetPoints', getPoints)
 exports('GetProfile', getProfile)
+
+-- Only return the requesting player's profile. No client-selected citizen IDs.
+local tabletRequests = {}
+lib.callback.register('ptech_mediora_core:tabletProfile', function(source)
+    if (exports.ox_inventory:GetItemCount(source, Config.Tablet.item) or 0) < 1 then
+        return { ok = false, error = 'item_required' }
+    end
+    if tabletRequests[source] then return { ok = false, error = 'busy' } end
+    if not databaseReady then return { ok = false, error = 'unavailable' } end
+    local player = getPlayer(source)
+    local data = player and player.PlayerData
+    if not data then return { ok = false, error = 'player_not_found' } end
+    tabletRequests[source] = true
+    local ok, profile = pcall(getProfile, source)
+    SetTimeout(1500, function() tabletRequests[source] = nil end)
+    if not ok or not profile then return { ok = false, error = 'unavailable' } end
+    if getCitizenId(source) ~= profile.citizenid then return { ok = false, error = 'player_not_found' } end
+    local info = data.charinfo or {}
+    local job = data.job or {}
+    profile.name = ((info.firstname or '') .. ' ' .. (info.lastname or '')):match('^%s*(.-)%s*$')
+    profile.job = job.label or job.name or '未所属'
+    profile.onDuty = job.onduty == true
+    local session = dutySessions[source]
+    if session and session.citizenid == profile.citizenid then
+        profile.dutySeconds = profile.dutySeconds + math.max(0, os.time() - session.lastSavedAt)
+    end
+    return { ok = true, profile = profile }
+end)
 exports('RecordActivity', recordActivity)
 exports('GetActivityTotal', getActivityTotal)
 exports('GetLeaderboard', getLeaderboard)

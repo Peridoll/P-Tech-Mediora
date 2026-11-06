@@ -8,6 +8,7 @@ description 'Mediora Core'
 version '0.2.0'
 
 dependencies {
+    'ox_inventory',
     'qbx_core',
     'ox_lib',
     'oxmysql',
@@ -24,10 +25,13 @@ files {
     'main/ui/index.html',
     'main/ui/app.js',
     'main/ui/style.css',
+    'main/ui/tablet.js',
+    'main/ui/tablet.css',
 }
 
 client_scripts {
     'main/client/action_panel.lua',
+    'main/client/tablet.lua',
 }
 
 server_scripts {
