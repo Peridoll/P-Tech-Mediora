@@ -1,0 +1,46 @@
+#tablet[hidden], #tablet [hidden] { display: none !important; }
+#tablet { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; color: #233e47; background: rgba(7,18,23,.25); }
+#tablet * { box-sizing: border-box; }
+.tablet-device { display: flex; width: min(1120px,92vw); height: min(740px,88vh); border: 12px solid #1b242b; border-radius: 32px; overflow: hidden; background: #f3f6f6; box-shadow: 0 30px 90px #0008; font-size: clamp(12px,1.05vw,15px); }
+#tablet button { font: inherit; cursor: pointer; border: 0; }
+#tablet button:focus-visible { outline: 3px solid #28bba6; outline-offset: -3px; }
+.tablet-sidebar { width: 225px; flex-shrink: 0; padding: 32px 18px 22px; display: flex; flex-direction: column; color: #d7e5e8; background: #142e36; }
+.tablet-brand { display: flex; gap: 12px; align-items: center; font-size: 32px; font-weight: 800; color: #6cddc4; }
+.tablet-brand span { font-size: 17px; letter-spacing: 2px; color: #fff; }
+.tablet-brand small { display: block; font-size: 8px; margin-top: 6px; letter-spacing: 1.5px; color: #8aa4ab; }
+.tablet-nav-label { margin: 48px 10px 14px; font-size: 10px; color: #8aa4ab; }
+.tablet-sidebar nav { display: grid; gap: 8px; }
+.tablet-sidebar button { text-align: left; padding: 15px 12px; border-radius: 8px; background: transparent; color: #a9bfc5; }
+.tablet-sidebar button span { margin-left: 9px; }
+.tablet-sidebar button.selected { background: #294850; color: #8aebd4; }
+.tablet-sidebar-footer { margin-top: auto; font-size: 11px; line-height: 1.9; }
+.tablet-sidebar-footer span { color: #8aa4ab; }
+.tablet-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tablet-topbar { height: 66px; flex-shrink: 0; padding: 0 30px; border-bottom: 1px solid #dce5e6; display: flex; align-items: center; justify-content: space-between; font-size: 10px; letter-spacing: 1px; color: #789097; }
+.tablet-topbar div { display: flex; align-items: center; gap: 20px; }
+#tablet-close { font-size: 27px !important; background: transparent; color: #597078; border-radius: 6px; }
+.tablet-content { padding: 30px; overflow-y: auto; flex: 1; }
+.tablet-page-heading { display: flex; align-items: center; justify-content: space-between; }
+.tablet-eyebrow { font-size: 9px; color: #6e8b92; letter-spacing: 2px; margin: 0 0 7px; }
+#tablet h1 { margin: 0; font-size: 25px; }
+#tablet-refresh { padding: 10px 14px; border-radius: 7px; color: #3b646c; background: #e3eded; }
+#tablet button:disabled { opacity: .5; cursor: wait; }
+#tablet-status { color: #657e84; min-height: 18px; font-size: 11px; }
+.tablet-welcome { padding: 28px; border-radius: 13px; background: #dfeee9; position: relative; overflow: hidden; }
+.tablet-tag { font-size: 9px; letter-spacing: 2px; color: #568579; }
+.tablet-welcome h2 { font-size: 26px; margin: 18px 0 10px; }
+.tablet-welcome p { color: #658179; font-size: 12px; }
+.tablet-duty { display: inline-block; margin-top: 8px; padding: 7px 12px; border-radius: 20px; font-size: 11px; background: #fff9; color: #32695c; }
+.tablet-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin: 20px 0; }
+.tablet-stats article { padding: 20px 16px; border: 1px solid #e0e7e7; background: #fff; border-radius: 10px; }
+.tablet-stats article span,.tablet-stats article small { display: block; color: #789095; font-size: 10px; }
+.tablet-stats strong { display: block; margin: 14px 0; font-size: 25px; font-weight: 600; overflow-wrap: anywhere; }
+.tablet-note { padding: 4px 2px; }
+#tablet h3 { font-size: 13px; }
+.tablet-note p { font-size: 12px; line-height: 1.8; color: #7a8e93; }
+.tablet-footer { display: flex; justify-content: space-between; padding: 14px 30px; border-top: 1px solid #dce5e6; font-size: 9px; letter-spacing: 1px; color: #879a9f; }
+.tablet-profile-card { padding: 25px; background: #fff; border: 1px solid #e0e7e7; border-radius: 12px; }
+#tablet-profile dl { background: white; padding: 20px; border-radius: 10px; }
+#tablet-profile dl div { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #edf1f1; gap: 18px; overflow-wrap: anywhere; }
+#tablet-profile dd { margin: 0; }
+@media (max-width: 850px) { .tablet-sidebar { width: 170px; padding-inline: 12px; } .tablet-content { padding: 20px; } .tablet-stats { gap: 8px; } .tablet-stats strong { font-size: 20px; } .tablet-welcome h2 { font-size: 22px; } }

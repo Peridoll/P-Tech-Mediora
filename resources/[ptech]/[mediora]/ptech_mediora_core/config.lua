@@ -1,5 +1,9 @@
 Config = {}
 
+Config.Tablet = {
+    item = 'mediora_tablet',
+}
+
 Config.Points = {
     identifier = 'ptech_mediora_work_points',
     label = 'Mediora Points',
@@ -28,4 +32,8 @@ Config.ActivityTracking = {
 
     -- Maximum value accepted in one activity record.
     maxAmount = 1000000,
+}
+
+Config.ActionPanel = {
+    switchKey = 'Z',
 }
