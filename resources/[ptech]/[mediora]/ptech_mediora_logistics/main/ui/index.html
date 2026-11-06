@@ -1,0 +1,128 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>html, body { margin: 0; background: transparent; font-family: Arial, 'Noto Sans JP', sans-serif; overflow: hidden; }
+[hidden] { display: none !important; }
+#exam-progress {
+  position: fixed;
+  left: 50%;
+  bottom: 15vh;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 24px 18px 18px;
+  border: 1px solid #55eaff44;
+  border-radius: 4px 18px 4px 18px;
+  background: linear-gradient(120deg, #06121ef5, #0d1025f5);
+  box-shadow: 0 0 24px #00d9ff14, inset 0 0 24px #35bbff09, 0 12px 30px #0007;
+  color: #e3faff;
+  pointer-events: none;
+}
+#exam-progress::before, #exam-progress::after {
+  content: '';
+  position: absolute;
+  width: 30px;
+  height: 2px;
+  background: #66f4ff;
+  box-shadow: 0 0 10px #00e5ff99;
+}
+#exam-progress::before { left: 20px; top: -1px; }
+#exam-progress::after { right: 20px; bottom: -1px; background: #b491ff; }
+.progress-content { width: 208px; }
+.progress-caption { margin-bottom: 7px; font-size: 9px; font-weight: 600; letter-spacing: 3px; color: #6eafbf; }
+#exam-progress-label { font-size: 13px; font-weight: 500; letter-spacing: .7px; }
+.exam-track { position: relative; height: 4px; margin-top: 12px; background: #20354c; overflow: hidden; }
+#exam-fill {
+  width: 100%; height: 100%; transform-origin: left;
+  background: linear-gradient(90deg, #218bff, #55f4ff 60%, #c295ff);
+  box-shadow: 0 0 12px #48e8ff;
+}
+.exam-track::after {
+  content: ''; position: absolute; inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 24px, #06121e 24px 27px);
+}
+small { display: block; margin-top: 9px; font-size: 10px; letter-spacing: 1px; color: #7b94aa; }
+.neon-core { position: relative; flex: 0 0 66px; height: 66px; }
+.neon-ring { position: absolute; border-radius: 50%; box-sizing: border-box; }
+.neon-ring.outer {
+  inset: 1px; border: 1px solid #3ae9ff22;
+  border-top: 2px solid #61f1ff; border-bottom: 2px solid #857dff;
+  box-shadow: 0 0 12px #3ae9ff18; animation: orbit 3s linear infinite;
+}
+.neon-ring.inner {
+  inset: 11px; border: 1px dashed #61f1ff77;
+  border-left: 2px solid #c69cff; animation: orbit 5s linear infinite reverse;
+}
+.neon-ring.orbit {
+  inset: 5px; border: 1px solid transparent; border-right-color: #a08aff66;
+  transform: rotate(45deg); animation: orbit 7s linear infinite;
+}
+.neon-ring.orbit::after {
+  content: ''; position: absolute; top: 5px; right: 6px; width: 4px; height: 4px;
+  border-radius: 50%; background: #d1adff; box-shadow: 0 0 8px #bc83ff;
+}
+.neon-crystal {
+  position: absolute; inset: 24px; border: 1px solid #a9faff;
+  background: #3ae9ff18; transform: rotate(45deg);
+  box-shadow: 0 0 14px #3ae9ff55, inset 0 0 9px #68ddff33;
+  animation: crystal-pulse 2s ease-in-out infinite;
+}
+@keyframes orbit { to { transform: rotate(360deg); } }
+@keyframes crystal-pulse {
+  0%, 100% { transform: rotate(45deg) scale(.85); opacity: .6; }
+  50% { transform: rotate(135deg) scale(1.1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .neon-ring, .neon-crystal { animation: none !important; }
+}</style></head><body><div id="exam-progress" hidden aria-hidden="true"><div class="neon-core" aria-hidden="true"><i class="neon-ring outer"></i><i class="neon-ring orbit"></i><i class="neon-ring inner"></i><i class="neon-crystal"></i></div><div class="progress-content"><div class="progress-caption">MEDIORA / LOGISTICS</div><strong id="exam-progress-label"></strong><div class="exam-track"><div id="exam-fill"></div></div><small>X でキャンセル</small></div></div><script>'use strict';
+const panel = document.getElementById('exam-progress');
+const fill = document.getElementById('exam-fill');
+let completionTimer;
+
+window.addEventListener('message', ({ data }) => {
+  if (data?.action !== 'logistics-progress') return;
+  clearTimeout(completionTimer);
+  const duration = Number(data.duration);
+  const visible = Number.isFinite(duration) && duration > 0;
+  panel.hidden = !visible;
+  panel.setAttribute('aria-hidden', String(!visible));
+  if (!visible) return;
+  document.getElementById('exam-progress-label').textContent = data.label || '物資を回収中';
+  fill.style.transition = 'none';
+  fill.style.transform = 'scaleX(0)';
+  void fill.offsetWidth;
+  fill.style.transition = 'transform ' + duration + 'ms linear';
+  fill.style.transform = 'scaleX(1)';
+  completionTimer = setTimeout(() => {
+    panel.hidden = true;
+    panel.setAttribute('aria-hidden', 'true');
+  }, duration + 1000);
+});
+
+function progressResourceName() {
+  if (typeof window.GetParentResourceName === 'function') return window.GetParentResourceName();
+  try {
+    if (typeof window.parent.GetParentResourceName === 'function') return window.parent.GetParentResourceName();
+  } catch (error) {
+    console.warn('[mediora logistics] Parent resource name unavailable', error);
+  }
+  return 'ptech_mediora_logistics';
+}
+
+async function announceReady() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2000);
+  try {
+    const response = await fetch('https://' + progressResourceName() + '/progressReady', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+      body: '{}',
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error('UI readiness HTTP ' + response.status);
+  } catch (error) {
+    console.warn('[mediora logistics] UI readiness failed', String(error));
+    setTimeout(announceReady, 500);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+announceReady();</script></body></html>

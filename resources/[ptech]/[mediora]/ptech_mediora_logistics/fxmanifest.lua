@@ -21,5 +21,8 @@ shared_scripts {
   'config/recipes.lua',
 }
 
+ui_page 'main/ui/index.html'
+files { 'main/ui/index.html' }
+
 client_script 'main/client/client.lua'
 server_script 'main/server/server.lua'
