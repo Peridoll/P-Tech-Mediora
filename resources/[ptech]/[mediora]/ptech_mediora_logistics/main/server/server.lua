@@ -5,13 +5,32 @@
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 local pointById, hospitalById, itemById = {}, {}, Config.Items
-local weightedContents, totalWeight = {}, 0
+local weightedContentsByRarity = {}
+local rarityOrder = { 'C', 'UC', 'R', 'SR', 'UR' }
 
 for _, point in ipairs(Config.CollectPoints) do pointById[point.id] = point end
 for _, hospital in ipairs(Config.Hospitals) do hospitalById[hospital.id] = hospital end
 for _, entry in ipairs(Config.BoxContents) do
-  totalWeight = totalWeight + entry.weight
-  weightedContents[#weightedContents + 1] = { item = entry.item, ceiling = totalWeight }
+  local item = itemById[entry.item]
+  local rarity = item and item.rarity or 'C'
+  weightedContentsByRarity[rarity] = weightedContentsByRarity[rarity] or { totalWeight = 0, entries = {} }
+  local pool = weightedContentsByRarity[rarity]
+  pool.totalWeight = pool.totalWeight + entry.weight
+  pool.entries[#pool.entries + 1] = { item = entry.item, ceiling = pool.totalWeight }
+end
+
+local function getGradeProfile(grade)
+  local profiles = Config.Procurement.gradeProfiles or {}
+  return profiles[tonumber(grade)] or profiles[1]
+end
+
+
+local function pickWeighted(pool)
+  if not pool or pool.totalWeight < 1 then return nil end
+  local roll = math.random(pool.totalWeight)
+  for _, entry in ipairs(pool.entries) do
+    if roll <= entry.ceiling then return entry.item end
+  end
 end
 
 
@@ -157,13 +176,13 @@ end
   【  】
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
-local function contentsStackKey(contents)
-  table.sort(contents, function(a, b) return a.item < b.item end)
-  local parts = {}
-  for _, entry in ipairs(contents) do
-    parts[#parts + 1] = ('%s=%s'):format(entry.item, entry.count)
-  end
-  return table.concat(parts, ';')
+--[[_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+  【  】
+
+_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
+local function normalStackKey(destinationId)
+    return ('regular:%s'):format(destinationId)
 end
 
 
@@ -173,19 +192,8 @@ end
   【  】
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
-local function normalStackKey(contents)
-    return ('regular:%s'):format(contentsStackKey(contents))
-end
-
-
-
---[[_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
-
-  【  】
-
-_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
-local function specialStackKey(date, recipeId, contents)
-  return ('special:%s:%s:%s'):format(date, recipeId, contentsStackKey(contents))
+local function specialStackKey(destinationId)
+  return ('special:%s'):format(destinationId)
 end
 
 
@@ -245,22 +253,47 @@ end
   【  】
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
-local function rollContents()
-  local totalCount = math.random(Config.Procurement.minItems, Config.Procurement.maxItems)
+local function rollContents(grade)
+  local profile = getGradeProfile(grade)
+  if not profile then return {} end
+
+  local countMultiplier = profile.itemCountMultiplier or 1.0
+  local minItems = math.floor(Config.Procurement.minItems * countMultiplier + 0.5)
+  local maxItems = math.floor(Config.Procurement.maxItems * countMultiplier + 0.5)
+  local totalCount = math.random(minItems, math.max(minItems, maxItems))
   local counts = {}
   for _ = 1, totalCount do
-    local roll = math.random(totalWeight)
-    for _, entry in ipairs(weightedContents) do
-      if roll <= entry.ceiling then
-        counts[entry.item] = (counts[entry.item] or 0) + 1
+    local chance = profile.rarityChance or {}
+    local roll = math.random(10000)
+    local threshold, selectedRarity, selectedIndex = 0, 'C', 1
+    for index, rarity in ipairs(rarityOrder) do
+      threshold = threshold + (chance[rarity] or 0) * 100
+      if roll <= threshold then
+        selectedRarity = rarity
+        selectedIndex = index
         break
       end
     end
+
+    local selectedItem = pickWeighted(weightedContentsByRarity[selectedRarity])
+    if not selectedItem then
+      for index = selectedIndex - 1, 1, -1 do
+        selectedItem = pickWeighted(weightedContentsByRarity[rarityOrder[index]])
+        if selectedItem then break end
+      end
+    end
+    if not selectedItem then
+      for index = selectedIndex + 1, #rarityOrder do
+        selectedItem = pickWeighted(weightedContentsByRarity[rarityOrder[index]])
+        if selectedItem then break end
+      end
+    end
+    if selectedItem then counts[selectedItem] = (counts[selectedItem] or 0) + 1 end
   end
 
   local contents = {}
   for item, count in pairs(counts) do
-    contents[#contents + 1] = { item = item, count = count }
+    contents[#contents + 1] = { item = item, count = count, rarity = itemById[item].rarity }
   end
   return contents
 end
@@ -285,11 +318,48 @@ end
 
 
 
+
 --[[_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
 
   【  】
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
+-- 旧回収品の物流用メタデータを除き、通常品と同じスタック条件へ戻す。
+local function cleanItemRarityLabels(source)
+  for _, slot in pairs(exports.ox_inventory:GetInventoryItems(source) or {}) do
+    local item = itemById[slot.name]
+    local metadata = slot.metadata
+    if item and metadata and (metadata.medioraRarity or metadata.medioraSourceGrade) then
+      local updated = {}
+      for key, value in pairs(metadata) do updated[key] = value end
+      updated.medioraRarity = nil
+      updated.medioraSourceGrade = nil
+      if updated.label == item.label
+        or (metadata.medioraRarity and updated.label == ('%s [%s]'):format(item.label, metadata.medioraRarity)) then
+        updated.label = nil
+      end
+      if updated.description == item.description
+        or (type(updated.description) == 'string'
+          and (updated.description:find('\nランク ', 1, true) or updated.description:find('\n回収グレード ', 1, true))) then
+        updated.description = nil
+      end
+      exports.ox_inventory:SetMetadata(source, slot.slot, updated)
+    end
+  end
+end
+
+CreateThread(function()
+  Wait(1000)
+  for _, playerId in ipairs(GetPlayers()) do
+    cleanItemRarityLabels(tonumber(playerId))
+  end
+end)
+
+AddEventHandler('QBCore:Server:OnPlayerLoaded', function(player)
+  local playerId = player and player.PlayerData and player.PlayerData.source
+  if playerId then cleanItemRarityLabels(playerId) end
+end)
+
 local function boxMetadata(hospital, source, stackKey, kind, extra)
   local metadata = {
     destinationId = hospital.id,
@@ -297,7 +367,7 @@ local function boxMetadata(hospital, source, stackKey, kind, extra)
     ownerId = ownerId(source),
     stackKey = stackKey,
     boxKind = kind,
-    label = kind == 'special' and '特注医療物資段ボール' or '医療物資段ボール',
+    label = kind == 'special' and '特注医療物資' or '医療物資',
     description = ('納品先: %s'):format(hospital.label),
   }
   for key, value in pairs(extra or {}) do metadata[key] = value end
@@ -311,22 +381,22 @@ end
   【  】
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
-local function addBox(source, hospital, contents, kind, date, recipe)
+local function addBox(source, hospital, contents, kind, date, recipe, sourceGrade)
   local stackKey = kind == 'special'
-    and specialStackKey(date, recipe.id, contents)
-    or normalStackKey(contents)
-  local extra = kind == 'special' and {
-    specialDate = date,
-    recipeId = recipe.id,
-    bonusHospital = recipe.targetHospital,
-    description = ('%s / 納品先: %s / 有効日: %s'):format(recipe.label, hospital.label, date),
-  } or nil
+    and specialStackKey(hospital.id)
+    or normalStackKey(hospital.id)
   local itemName = kind == 'special' and Config.Procurement.specialBoxItem or Config.Procurement.boxItem
-  local metadata = boxMetadata(hospital, source, stackKey, kind, extra)
+  local metadata = boxMetadata(hospital, source, stackKey, kind)
   if not exports.ox_inventory:CanCarryItem(source, itemName, 1, metadata) then return false end
 
   local queue = getQueue(source, hospital.id, stackKey)
-  local parcel = { serial = nextSerial(), contents = contents, kind = kind, date = date }
+  local parcel = {
+    serial = nextSerial(),
+    contents = contents,
+    kind = kind,
+    date = date,
+    sourceGrade = sourceGrade,
+  }
   queue[#queue + 1] = parcel
   setQueue(source, hospital.id, stackKey, queue)
 
@@ -337,6 +407,10 @@ local function addBox(source, hospital, contents, kind, date, recipe)
     return false
   end
   return true, parcel.serial, stackKey
+end
+
+local function hasFullServices(hospital)
+  return hospital and hospital.id == (Config.Economy.fullServiceHospitalId or Config.Economy.tradeHospitalId)
 end
 
 
@@ -393,6 +467,8 @@ end
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 local function getSellValueForParcel(parcel, hospital)
   local multiplier = Config.Economy.unopenedBoxSellMultiplier
+  local gradeProfile = getGradeProfile(parcel.sourceGrade or 1)
+  multiplier = multiplier * (gradeProfile and gradeProfile.sellMultiplier or 1.0)
   local premium = parcel.kind == 'special' and parcel.date == getTodayDate() and hospital.id == parcel.bonusHospital
   if premium then multiplier = multiplier * Config.Economy.specialBoxSellMultiplier end
   local expiredSpecial = parcel.kind == 'special' and not premium
@@ -424,9 +500,10 @@ RegisterNetEvent('ptech_mediora_logistics:server:collect',
     end
 
     local hospital = Config.Hospitals[math.random(#Config.Hospitals)]
-    local success, serial = addBox(source, hospital, rollContents(), 'regular')
+    local grade = tonumber(point.grade) or 1
+    local success, serial = addBox(source, hospital, rollContents(grade), 'regular', nil, nil, grade)
     if not success then
-      notify(source, Config.Text.inventoryFull)
+      notify(source, Config.Text.collectionFailed)
       return
     end
 
@@ -560,20 +637,46 @@ lib.callback.register('ptech_mediora_logistics:server:getTradeCatalog',
     if mode ~= 'buy' and mode ~= 'sell' then return {} end
 
     local catalog = {}
-    for itemId, item in pairs(Config.Items) do
-        local price = mode == 'buy' and item.buyPrice or item.sellPrice
-        if price and price > 0 then
-            local count = mode == 'sell'
-                and exports.ox_inventory:GetItemCount(source, itemId) or 0
-            if mode == 'buy' or count > 0 then
-                catalog[#catalog + 1] = {
-                    id = itemId,
-                    label = item.label,
-                    price = price,
-                    count = count,
-                }
-            end
+    if mode == 'buy' then
+      for itemId, item in pairs(Config.Items) do
+        if item.buyPrice and item.buyPrice > 0 then
+          catalog[#catalog + 1] = {
+            key = itemId,
+            id = itemId,
+            label = item.label,
+            price = item.buyPrice,
+            count = 0,
+            grade = 0,
+          }
         end
+      end
+    else
+      local byItemAndGrade = {}
+      for _, slot in pairs(exports.ox_inventory:GetInventoryItems(source) or {}) do
+        local item = itemById[slot.name]
+        if item and item.sellPrice and item.sellPrice > 0 then
+          local grade = 0
+          local key = ('%s:%s'):format(slot.name, grade)
+          local entry = byItemAndGrade[key]
+          if not entry then
+            local profile = grade > 0 and getGradeProfile(grade) or nil
+            local multiplier = profile and profile.sellMultiplier or 1.0
+            entry = {
+              key = key,
+              id = slot.name,
+              label = item.label,
+              price = math.floor(item.sellPrice * multiplier + 0.5),
+              count = 0,
+              grade = grade,
+            }
+            byItemAndGrade[key] = entry
+          end
+          entry.count = entry.count + (slot.count or 0)
+        end
+      end
+      for _, entry in pairs(byItemAndGrade) do
+        if entry.count > 0 then catalog[#catalog + 1] = entry end
+      end
     end
     table.sort(catalog, function(a, b) return a.label < b.label end)
     return catalog
@@ -588,7 +691,7 @@ lib.callback.register('ptech_mediora_logistics:server:getTradeCatalog',
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 RegisterNetEvent('ptech_mediora_logistics:server:tradeItem',
-  function(hospitalId, mode, itemId, count)
+  function(hospitalId, mode, itemId, count, sourceGrade)
     local source = source
     local hospital = hospitalById[hospitalId]
     local item = itemById[itemId]
@@ -617,16 +720,56 @@ RegisterNetEvent('ptech_mediora_logistics:server:tradeItem',
       end
       notify(source, ('%s を %s 個購入しました。$%s'):format(item.label, count, total))
     elseif mode == 'sell' then
-      local unitPrice = item.sellPrice
-      local total = unitPrice and unitPrice * count
-      if not total or count > exports.ox_inventory:GetItemCount(source, itemId) then
+      local grade = 0
+
+      local matchingSlots, availableCount, total = {}, 0, 0
+      for _, slot in pairs(exports.ox_inventory:GetInventoryItems(source) or {}) do
+        if slot.name == itemId then
+          matchingSlots[#matchingSlots + 1] = slot
+          availableCount = availableCount + (slot.count or 0)
+        end
+      end
+      table.sort(matchingSlots, function(a, b) return (a.slot or 0) < (b.slot or 0) end)
+      if count > availableCount then
         notify(source, Config.Text.tradeInvalid)
         return
       end
-      local success = exports.ox_inventory:RemoveItem(source, itemId, count)
-      if not success then return end
+
+      local profile = grade > 0 and getGradeProfile(grade) or nil
+      local multiplier = profile and profile.sellMultiplier or 1.0
+      local unitPrice = math.floor(item.sellPrice * multiplier + 0.5)
+      total = unitPrice * count
+
+      local remaining, removed = count, {}
+      for _, slot in ipairs(matchingSlots) do
+        if remaining <= 0 then break end
+        local amount = math.min(slot.count or 0, remaining)
+        local metadata = slot.metadata or {}
+        if amount > 0 and not exports.ox_inventory:RemoveItem(source, itemId, amount, metadata, slot.slot, false, true) then
+          for _, entry in ipairs(removed) do
+            exports.ox_inventory:AddItem(source, itemId, entry.count, entry.metadata)
+          end
+          notify(source, Config.Text.tradeInvalid)
+          return
+        end
+        if amount > 0 then
+          removed[#removed + 1] = { count = amount, metadata = metadata }
+          remaining = remaining - amount
+        end
+      end
+
+      if remaining > 0 then
+        for _, entry in ipairs(removed) do
+          exports.ox_inventory:AddItem(source, itemId, entry.count, entry.metadata)
+        end
+        notify(source, Config.Text.tradeInvalid)
+        return
+      end
+
       if not exports.qbx_core:AddMoney(source, Config.Economy.moneyType, total, 'mediora-logistics-sale') then
-        exports.ox_inventory:AddItem(source, itemId, count)
+        for _, entry in ipairs(removed) do
+          exports.ox_inventory:AddItem(source, itemId, entry.count, entry.metadata)
+        end
         notify(source, Config.Text.tradeInvalid)
         return
       end
@@ -673,7 +816,7 @@ _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 lib.callback.register('ptech_mediora_logistics:server:getCraftingCatalog',
   function(source, hospitalId)
     local hospital = hospitalById[hospitalId]
-    if not hospital or not isAllowed(source) or not isNear(source, hospital) then return {} end
+    if not hasFullServices(hospital) or not isAllowed(source) or not isNear(source, hospital) then return {} end
     local catalog = {}
     for _, recipe in ipairs(Config.CraftingRecipes) do
       local output = itemById[recipe.output]
@@ -706,7 +849,7 @@ RegisterNetEvent('ptech_mediora_logistics:server:craftItem',
     local source = source
     local hospital = hospitalById[hospitalId]
     local recipe = craftingRecipeById[recipeId]
-    if not hospital or not recipe or not isAllowed(source) or not isNear(source, hospital) then return end
+    if not hasFullServices(hospital) or not recipe or not isAllowed(source) or not isNear(source, hospital) then return end
     if type(count) ~= 'number' or count % 1 ~= 0 or count < 1 or count > getMaxCraftCount(source, recipe) then
       notify(source, Config.Text.missingRecipeItems)
       return
@@ -747,7 +890,7 @@ _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 lib.callback.register('ptech_mediora_logistics:server:getDailySpecial',
   function(source, hospitalId)
     local hospital = hospitalById[hospitalId]
-    if not hospital or not isAllowed(source) or not isNear(source, hospital) then return nil end
+    if not hasFullServices(hospital) or not isAllowed(source) or not isNear(source, hospital) then return nil end
     local recipe, date = getDailyRecipe()
     if not recipe then return nil end
     local target = hospitalById[recipe.targetHospital]
@@ -779,7 +922,7 @@ RegisterNetEvent('ptech_mediora_logistics:server:craftDailySpecial',
     local target       = recipe and hospitalById[recipe.targetHospital]
 
     -- いずれかの条件が満たされない場合は処理を中断
-    if (not hospital) or (not target) or (not isAllowed(source)) or (not isNear(source, hospital)) then return end
+    if (not hasFullServices(hospital)) or (not target) or (not isAllowed(source)) or (not isNear(source, hospital)) then return end
 
     -- レシピの材料が揃っているか確認 >> 揃っていない場合は通知して処理を中断
     for itemId, required in pairs(recipe.ingredients) do
@@ -796,18 +939,12 @@ RegisterNetEvent('ptech_mediora_logistics:server:craftDailySpecial',
     end
 
     -- 箱のスタックキーとメタデータを作成
-    local stackKey = specialStackKey(date, recipe.id, contents)
+    local stackKey = specialStackKey(target.id)
     local metadata = boxMetadata(
       target,
       source,
       stackKey,
-      'special',
-      {
-        specialDate = date,
-        recipeId = recipe.id,
-        bonusHospital = target.id,
-        description = ('%s / 納品先: %s / 有効日: %s'):format(recipe.label, target.label, date),
-      }
+      'special'
     )
 
     -- インベントリに空きがあるか確認 >> 空きがない場合は通知して処理を中断
@@ -896,58 +1033,59 @@ exports( 'openDeliveryBox',
 
     -- スロット情報を取得
     local slotData      = exports.ox_inventory:GetSlot(source, slot)
+    local metadata = slotData and slotData.metadata
+    local destinationId = metadata and metadata.destinationId
+    local hospital = destinationId and hospitalById[destinationId]
+    if not slotData or (slotData.name ~= Config.Procurement.boxItem and slotData.name ~= Config.Procurement.specialBoxItem)
+      or not hospital or metadata.ownerId ~= ownerId(source) or not metadata.stackKey then return false end
 
-    -- メタデータを取得
-    local metadata      = slotData and slotData.metadata
-
-    -- 配送先IDと病院情報を取得
-    local destinationId = metadata      and metadata.destinationId
-    local hospital      = destinationId and hospitalById[destinationId]
-
-    -- メタデータと病院情報の妥当性を確認 >> 一致していない場合は処理を中断
-    if not hospital or metadata.ownerId ~= ownerId(source) or not metadata.stackKey then return false end
-
-    -- 配送キューを取得
-    local queue = getQueue(source, destinationId, metadata.stackKey)
-
-    -- 配送キューの先頭の荷物を取得
-    local parcel = queue[1]
-
-    -- 配送キューにアイテムが存在しない場合は処理を中断
-    if not parcel then return false end
-
-    -- 配送キューの内容を確認
-    for _, entry in ipairs(parcel.contents) do
-      if not exports.ox_inventory:CanCarryItem(source, entry.item, entry.count) then
-        -- 所持可能か確認できなかった場合は処理を中断して通知する
-        notify(source, Config.Text.inventoryFull)
-        return false
-      end
-    end
-
-    -- 箱アイテムをインベントリから削除 >> 失敗した場合は処理を中断
-    local removed = exports.ox_inventory:RemoveItem(source, item.name, 1, metadata, slot, false, true)
-    if (not removed) then return false end
-
-    -- 配送キューから先頭の荷物を削除
-    table.remove(queue, 1)
-
-    -- 配送キューを更新
-    setQueue(source, destinationId, metadata.stackKey, queue)
-
-    -- 配送キューの内容をインベントリに追加
-    for _, entry in ipairs(parcel.contents) do
-      -- アイテムをインベントリに追加
-      exports.ox_inventory:AddItem(source, entry.item, entry.count)
-    end
-
-    -- 開封通知を送信
-    notify(source, Config.Text.boxOpened:format(parcel.serial))
-
-    -- 処理完了
-    return true
+    TriggerClientEvent('ptech_mediora_logistics:client:showBoxMenu', source, slot, hospital.label,
+      hospital.coords.x, hospital.coords.y)
+    return false -- 使用時は選択メニューを開き、選択後にサーバーで開封する
   end
 ) -- openDeliveryBox
+
+RegisterNetEvent('ptech_mediora_logistics:server:openDeliveryBox', function(slot)
+  local source = source
+  if not isAllowed(source) or type(slot) ~= 'number' then return end
+  local slotData = exports.ox_inventory:GetSlot(source, slot)
+  local metadata = slotData and slotData.metadata
+  local destinationId = metadata and metadata.destinationId
+  local hospital = destinationId and hospitalById[destinationId]
+  if not slotData or (slotData.name ~= Config.Procurement.boxItem and slotData.name ~= Config.Procurement.specialBoxItem)
+    or not hospital or metadata.ownerId ~= ownerId(source) or not metadata.stackKey then return end
+
+  local queue = getQueue(source, destinationId, metadata.stackKey)
+  local parcel = queue[1]
+  if not parcel then return end
+  for _, entry in ipairs(parcel.contents or {}) do
+    local itemMetadata = {}
+    if not exports.ox_inventory:CanCarryItem(source, entry.item, entry.count, itemMetadata) then
+      notify(source, Config.Text.inventoryFull)
+      return
+    end
+  end
+
+  if not exports.ox_inventory:RemoveItem(source, slotData.name, 1, metadata, slot, false, true) then return end
+  table.remove(queue, 1)
+  setQueue(source, destinationId, metadata.stackKey, queue)
+  local added = {}
+  for _, entry in ipairs(parcel.contents) do
+    local itemMetadata = {}
+    if not exports.ox_inventory:AddItem(source, entry.item, entry.count, itemMetadata) then
+      for _, addedEntry in ipairs(added) do
+        exports.ox_inventory:RemoveItem(source, addedEntry.item, addedEntry.count, addedEntry.metadata)
+      end
+      table.insert(queue, 1, parcel)
+      setQueue(source, destinationId, metadata.stackKey, queue)
+      exports.ox_inventory:AddItem(source, slotData.name, 1, metadata)
+      notify(source, Config.Text.inventoryFull)
+      return
+    end
+    added[#added + 1] = { item = entry.item, count = entry.count, metadata = itemMetadata }
+  end
+  notify(source, Config.Text.boxOpened:format(parcel.serial))
+end)
 
 
 

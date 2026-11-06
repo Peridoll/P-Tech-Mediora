@@ -1,3 +1,12 @@
+local function isAllowed()
+  local player = exports.qbx_core:GetPlayerData()
+  local job = player and player.job
+  if not job then return false end
+  if Config.AllowedJobs and next(Config.AllowedJobs) ~= nil and Config.AllowedJobs[job.name] ~= true then
+    return false
+  end
+  return not Config.RequireOnDuty or job.onduty == true
+end
 
 --[[_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
 
@@ -6,6 +15,79 @@
     text：表示するヘルプメッセージ
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
+local logisticsProgress
+local progressUiReady = false
+
+RegisterNUICallback('progressReady', function(_, cb)
+  progressUiReady = true
+  cb({ ok = true })
+end)
+
+local function runLogisticsProgress(options)
+  if logisticsProgress then return false end
+  local ped = PlayerPedId()
+  if IsEntityDead(ped) or IsPedInAnyVehicle(ped, false) then return false end
+  local animation = options.anim
+  local operation = { ped = ped, animation = animation }
+  logisticsProgress = operation
+  local readyDeadline = GetGameTimer() + 5000
+  while not progressUiReady and GetGameTimer() < readyDeadline do
+    Wait(50)
+  end
+  if not progressUiReady then
+    logisticsProgress = nil
+    local resource = GetCurrentResourceName()
+    local uiPage = GetResourceMetadata(resource, 'ui_page', 0)
+    local uiFile = uiPage and LoadResourceFile(resource, uiPage)
+    local detail
+    if not uiPage then
+      detail = '実行中の fxmanifest.lua に ui_page がありません。fxmanifest.lua も更新してください。'
+    elseif not uiFile then
+      detail = ('画面ファイル %s が配信されていません。main/ui/index.html と fxmanifest.lua を更新してください。'):format(uiPage)
+    else
+      detail = '画面ファイルは存在しますが応答がありません。F8 の [mediora logistics] と NUI エラーを確認してください。'
+    end
+    print(('[mediora logistics] resource=%s ui_page=%s htmlBytes=%s ready=%s'):format(
+      resource, tostring(uiPage), uiFile and #uiFile or 0, tostring(progressUiReady)))
+    print('[mediora logistics] ' .. detail)
+    lib.notify({ description = detail, type = 'error', duration = 12000 })
+    return false
+  end
+  RequestAnimDict(animation.dict)
+  SendNUIMessage({ action = 'logistics-progress', duration = options.duration, label = options.label })
+  local deadline = GetGameTimer() + options.duration
+  local finished = false
+  while logisticsProgress == operation and PlayerPedId() == ped and not IsEntityDead(ped) and isAllowed() do
+    DisableAllControlActions(0)
+    EnableControlAction(0, 1, true)
+    EnableControlAction(0, 2, true)
+    if IsDisabledControlJustPressed(0, 73) or IsDisabledControlJustPressed(0, 177) then break end
+    if GetGameTimer() >= deadline then
+      finished = true
+      break
+    end
+    if HasAnimDictLoaded(animation.dict) and not operation.playing then
+      TaskPlayAnim(ped, animation.dict, animation.clip, 3.0, -3.0, -1, animation.flag or 1, 0.0, false, false, false)
+      operation.playing = true
+    end
+    Wait(0)
+  end
+  StopAnimTask(ped, animation.dict, animation.clip, 1.0)
+  RemoveAnimDict(animation.dict)
+  SendNUIMessage({ action = 'logistics-progress' })
+  logisticsProgress = nil
+  return finished
+end
+
+AddEventHandler('onResourceStop', function(resource)
+  if resource ~= GetCurrentResourceName() or not logisticsProgress then return end
+  local operation = logisticsProgress
+  logisticsProgress = nil
+  StopAnimTask(operation.ped, operation.animation.dict, operation.animation.clip, 1.0)
+  RemoveAnimDict(operation.animation.dict)
+  SendNUIMessage({ action = 'logistics-progress' })
+end)
+
 local function showHelp(text)
   BeginTextCommandDisplayHelp('STRING')
   AddTextComponentSubstringPlayerName(text)
@@ -135,7 +217,7 @@ local function requestTrade(hospital, mode)
     -- トレードオプションを追加
     options[#options + 1] = {
       label = ('%s (%s)'):format(item.label, suffix),
-      value = item.id,
+      value = item.key or item.id,
     }
 
   end -- for catalog
@@ -161,7 +243,7 @@ local function requestTrade(hospital, mode)
 
   -- 選択されたアイテムがカタログに存在しない場合は処理を終了
   for _, item in ipairs(catalog) do
-    if item.id == selection[1] then
+    if (item.key or item.id) == selection[1] then
       selected = item
       break
     end
@@ -197,7 +279,8 @@ local function requestTrade(hospital, mode)
         hospital.id,
         mode,
         selected.id,
-        amountInput[1]
+        amountInput[1],
+        selected.grade
     )
   end
 
@@ -382,7 +465,7 @@ local function openHospitalMenu(hospital)
     deliverDescription = ('%s / 本日の納品倍率 ×%.2f'):format(deliverDescription, dailyMultiplier)
   end
 
-  -- 医療道具の売買メニューは本院のみ表示する。Serverでも同じ条件を確認する。
+  -- すべての病院で納品できる。納品以外の機能はフルサービス拠点だけに表示する。
   local options = {
     {
       title       = Config.Text.menuDeliver,
@@ -390,13 +473,22 @@ local function openHospitalMenu(hospital)
       icon        = 'truck-medical',
       onSelect    = function() requestDelivery(hospital) end,
     },
-    {
+  }
+
+  if hospital.id == (Config.Economy.fullServiceHospitalId or Config.Economy.tradeHospitalId) then
+    options[#options + 1] = {
       title       = Config.Text.menuCraftSpBox,
       description = Config.Text.menuCraftSpBoxDesc,
       icon        = 'box',
       onSelect    = function() requestDailySpecial(hospital) end,
-    },
-  }
+    }
+    options[#options + 1] = {
+      title       = Config.Text.menuCraftTools,
+      description = Config.Text.menuCraftToolsDesc,
+      icon        = 'screwdriver-wrench',
+      onSelect    = function() requestCraftItem(hospital) end,
+    }
+  end
 
   if hospital.id == Config.Economy.tradeHospitalId then
     options[#options + 1] = {
@@ -412,13 +504,6 @@ local function openHospitalMenu(hospital)
       onSelect    = function() requestTrade(hospital, 'sell') end,
     }
   end
-
-  options[#options + 1] = {
-    title       = Config.Text.menuCraftTools,
-    description = Config.Text.menuCraftToolsDesc,
-    icon        = 'screwdriver-wrench',
-    onSelect    = function() requestCraftItem(hospital) end,
-  }
 
   -- 病院メニューのコンテキストを登録
   lib.registerContext({
@@ -469,7 +554,11 @@ CreateThread(
 
       -- 探索は一定間隔で実行。近接時のマーカー描画とEキー判定は毎フレーム継続する。
       local now = GetGameTimer()
-      if now >= nextScanAt then
+      local allowed = isAllowed()
+      if not allowed then
+        cachedCollectPoint, cachedHospital = nil, nil
+        nextScanAt = 0
+      elseif now >= nextScanAt then
         cachedCollectPoint = findNearest(table_CollectPoints, playerCoords, markerDistance)
         cachedHospital = findNearest(table_Hospitals, playerCoords, markerDistance)
         nextScanAt = now + (Config.Procurement.scanIntervalMs or 750)
@@ -508,11 +597,29 @@ CreateThread(
         -- プレイヤーが収集ポイントにいるとき、操作方法を表示し、収集イベントをトリガーする
         if pointDistance <= interactDistance then -- プレイヤーがEキー操作可能な距離にいる場合
 
-          showHelp(Config.Text.collect .. ' [E]') -- collectPoint(収集ポイント)での操作方法を表示
+          showHelp(Config.Text.collect .. ' [E]') -- 回収地点の操作方法を表示
 
           if IsControlJustReleased(0, 38) then -- プレイヤーが収集ポイントで操作した場合 (38:Eキー)
 
-            TriggerServerEvent('ptech_mediora_logistics:server:collect', collectPoint.id) -- サーバーに収集イベントを通知
+            local completed = runLogisticsProgress({
+              duration = Config.Procurement.collectDurationMs or 5000,
+              label = '物資を回収中...',
+              position = 'bottom',
+              canCancel = true,
+              useWhileDead = false,
+              disable = { move = true, car = true, combat = true },
+              anim = {
+                dict = 'amb@prop_human_bum_bin@base',
+                clip = 'base',
+                flag = 1,
+              },
+            })
+
+            if completed and isAllowed() then
+              TriggerServerEvent('ptech_mediora_logistics:server:collect', collectPoint.id)
+            elseif not completed then
+              notify('回収を中止しました。', 'inform')
+            end
             Wait(700) -- 操作後の待機時間を設定
 
           end -- if IsControlJustReleased(0, 38) then
@@ -588,3 +695,49 @@ RegisterNetEvent(
     notify(message)
   end -- function(message)
 ) -- RegisterNetEvent
+
+RegisterNetEvent('ptech_mediora_logistics:client:showBoxMenu', function(slot, destinationLabel, x, y)
+  local contextId = ('mediora_box_%s'):format(slot)
+  lib.registerContext({
+    id = contextId,
+    title = Config.Text.boxMenu,
+    options = {
+      {
+        title = Config.Text.boxNavigate,
+        description = destinationLabel,
+        icon = 'location-dot',
+        onSelect = function()
+          SetNewWaypoint(x + 0.0, y + 0.0)
+          notify(('%sをマップに設定しました。'):format(destinationLabel))
+        end,
+      },
+      {
+        title = Config.Text.boxOpen,
+        description = destinationLabel,
+        icon = 'box-open',
+        onSelect = function()
+          local completed = runLogisticsProgress({
+            duration = Config.Procurement.boxOpenDurationMs,
+            label = Config.Text.boxOpening,
+            position = 'bottom',
+            canCancel = true,
+            useWhileDead = false,
+            disable = { move = true, car = true, combat = true },
+            anim = {
+              dict = 'anim@amb@business@coc@coc_unpack_cut@',
+              clip = 'fullcut_cycle_v1_cokepacker',
+              flag = 1,
+            },
+          })
+
+          if completed then
+            TriggerServerEvent('ptech_mediora_logistics:server:openDeliveryBox', slot)
+          else
+            notify(Config.Text.boxOpenCancelled, 'inform')
+          end
+        end,
+      },
+    },
+  })
+  lib.showContext(contextId)
+end)

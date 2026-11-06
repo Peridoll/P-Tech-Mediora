@@ -35,13 +35,44 @@ Config.Procurement = {
   minItems         = 5,                               -- 1回の調達で入手できる最小アイテム数
   maxItems         = 10,                              -- 1回の調達で入手できる最大アイテム数
   maxDeliveries    = 300,                             -- 最大配達回数
-  boxItem          = 'ptech_mediora_supply_box',      -- 通常段ボールのアイテム名
-  specialBoxItem   = 'ptech_mediora_special_box',     -- 特注段ボールのアイテム名
+  collectDurationMs = 5000,                           -- 物資回収の所要時間（ミリ秒）
+  boxOpenDurationMs = 5000,                           -- 段ボールの開封所要時間（ミリ秒）
+  boxItem          = 'pmediora_supplybox',      -- 通常段ボールのアイテム名
+  specialBoxItem   = 'pmediora_specialbox',     -- 特注段ボールのアイテム名
   interactDistance = 2.0,                             -- インタラクト可能距離
   markerDistance   = 20.0,                            -- マーカーの描画距離
   markerType       = 2,                               -- マーカーの種類
   markerScale      = vector3(0.35, 0.35, 0.35),       -- マーカーの大きさ
   scanIntervalMs   = 750,                             -- 収集地点・病院の再探索間隔（ミリ秒）。マーカーは毎フレーム描画
+  -- 出現率は％。倍率と確率は運用開始前の仮置きなので、運用しながら調整する。
+  -- rarityChance は C / UC / R / SR / UR の合計を100にする。
+  gradeProfiles = { -- 収集地点のグレードごとの抽選・報酬設定
+    [1] = {
+      itemCountMultiplier = 1.00, -- 基準の取得個数に掛ける倍率
+      sellMultiplier      = 1.00, -- 箱・中身の売却額に掛ける倍率
+      rarityChance        = { C = 75, UC = 20, R = 4,  SR = 1,  UR = 0 },
+    },
+    [2] = {
+      itemCountMultiplier = 1.15,
+      sellMultiplier      = 1.15,
+      rarityChance        = { C = 65, UC = 24, R = 8,  SR = 2,  UR = 1 },
+    },
+    [3] = {
+      itemCountMultiplier = 1.30,
+      sellMultiplier      = 1.30,
+      rarityChance        = { C = 50, UC = 28, R = 14, SR = 6,  UR = 2 },
+    },
+    [4] = {
+      itemCountMultiplier = 1.50,
+      sellMultiplier      = 1.50,
+      rarityChance        = { C = 38, UC = 30, R = 20, SR = 9,  UR = 3 },
+    },
+    [5] = {
+      itemCountMultiplier = 1.75,
+      sellMultiplier      = 1.75,
+      rarityChance        = { C = 25, UC = 30, R = 25, SR = 15, UR = 5 },
+    },
+  },
 }
 
 
@@ -56,6 +87,7 @@ Config.Economy = {
   unopenedBoxSellMultiplier = 1.20,   -- 未開封の段ボールの売却倍率
   specialBoxSellMultiplier  = 1.50,   -- 作成当日・指定納品先での特注ボーナス倍率（翌日は失効）
   tradeHospitalId           = 'pillbox', -- 医療道具を購入・売却できる病院のID（ピルボックス限定）
+  fullServiceHospitalId     = 'pillbox', -- クラフトなど納品以外の機能を利用できる病院のID
   dailyHospitalMultiplier   = {      -- 病院別・日替わり納品倍率（通常・特注両方に適用）
     min  = 0.80,                     -- 倍率の最低値（仮の初期値。運営で変更可）
     max  = 1.60,                     -- 倍率の最高値（仮の初期値。運営で変更可）
@@ -72,11 +104,11 @@ _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 -- 物資回収地点の設定。地図・GPS・発見履歴には公開しない。
 -- 地点はいくつでも追加できる。各IDは重複させない。
 Config.CollectPoints = {
-  { id = 'collect_point_01', coords = vector3(100.0, 200.0, 30.0), label = '物資回収地点 1' }, -- 仮１：本番使用前に変更
-  { id = 'collect_point_02', coords = vector3(150.0, 250.0, 35.0), label = '物資回収地点 2' }, -- 仮２：本番使用前に変更
-  { id = 'collect_point_03', coords = vector3(200.0, 300.0, 40.0), label = '物資回収地点 3' }, -- 仮３：本番使用前に変更
+  { id = 'pillbox01',                 grade = 1, coords = vector3(  311.28,  -583.42, 42.27 ), label = 'ピルボックス01' },
+  { id = 'los_santos_theater',        grade = 2, coords = vector3(  308.87,  -906.93, 28.29 ), label = 'ロスサントスシアター' },
+  { id = 'mamas_grocery',             grade = 2, coords = vector3(  388.35,  -732.18, 28.29 ), label = 'ママズグロサリー' },
+  { id = 'puerto_del_sol_yacht_club', grade = 2, coords = vector3( -867.49, -1275.09,  4.15 ), label = 'プエルト・デル・ソル・ヨットクラブ' }
 }
-
 
 --[[_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
 
@@ -85,14 +117,14 @@ Config.CollectPoints = {
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 -- 病院の設定。座標はゲーム内で入口・高さを確認すること。
 Config.Hospitals = {
-  { id = 'pillbox',         coords = vector3(307.2,   -595.3,   43.3 ), label = 'ピルボックスヒル医療センター' },
-  { id = 'eclipse',         coords = vector3(-676.98, 310.68,   83.08), label = 'エクリプス医療センター' },
-  { id = 'mount_zonah',     coords = vector3(-449.7,  -340.8,   34.5 ), label = 'マウント・ゾナ医療センター' },
-  { id = 'central_ls',      coords = vector3(295.83,  -1446.94, 29.97), label = 'セントラル医療センター' },
-  { id = 'st_fiacre',       coords = vector3(1151.21, -1529.62, 35.37), label = 'セント・フィアクレ病院' },
-  { id = 'portola_trinity', coords = vector3(-874.64, -307.71,  39.58), label = 'ポートラ・トリニティ医療センター' },
-  { id = 'sandy_shores',    coords = vector3(1839.6,  3672.9,   34.3 ), label = 'サンディ・ショアーズ医療センター' },
-  { id = 'paleto_bay',      coords = vector3(-247.4,  6331.2,   32.4 ), label = 'パレト・ベイ医療センター' },
+  { id = 'pillbox',         coords = vector3(  308.62,  -586.9 , 42.27), label = 'ピルボックスヒル医療センター' },
+  { id = 'eclipse',         coords = vector3( -676.98,   310.68, 83.08), label = 'エクリプス医療センター' },
+  { id = 'mount_zonah',     coords = vector3( -449.7 ,  -340.8 , 34.5 ), label = 'マウント・ゾナ医療センター' },
+  { id = 'central_ls',      coords = vector3(  295.83, -1446.94, 29.97), label = 'セントラル医療センター' },
+  { id = 'st_fiacre',       coords = vector3( 1151.21, -1529.62, 35.37), label = 'セント・フィアクレ病院' },
+  { id = 'portola_trinity', coords = vector3( -874.64,  -307.71, 39.58), label = 'ポートラ・トリニティ医療センター' },
+  { id = 'sandy_shores',    coords = vector3( 1839.6 ,  3672.9 , 34.3 ), label = 'サンディ・ショアーズ医療センター' },
+  { id = 'paleto_bay',      coords = vector3( -247.4 ,  6331.2 , 32.4 ), label = 'パレト・ベイ医療センター' },
 }
 
 
@@ -102,17 +134,17 @@ Config.Hospitals = {
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 -- 各段ボールに封入される可能性のある医療道具の設定
--- weight: 封入される確率（数値が大きいほど出現しやすい）
+-- weight: 同一ランク内での出現比重（数値が大きいほど出現しやすい）
 Config.BoxContents = {
-  { item = 'ptech_medical_first_aid_kit',         weight = 2 }, -- 救急キット
-  { item = 'ptech_medical_bandage',               weight = 4 }, -- 包帯
-  { item = 'ptech_medical_splint',                weight = 1 }, -- 副木
-  { item = 'ptech_medical_ice_pack',              weight = 3 }, -- 冷却パック
-  { item = 'ptech_medical_bullet_extraction_kit', weight = 1 }, -- 弾丸除去キット
-  { item = 'ptech_medical_surgical_forceps',      weight = 3 }, -- ピンセット
-  { item = 'ptech_medical_suture_kit',            weight = 1 }, -- 縫合キット
-  { item = 'ptech_medical_needle_and_thread',     weight = 3 }, -- 針と糸
-  { item = 'ptech_medical_burn_cream',            weight = 2 }, -- 火傷用クリーム
+  { item = 'pmediora_firstaidkit',         weight = 1 }, -- 救急キット
+  { item = 'pmediora_bandage',               weight = 2 }, -- 包帯
+  { item = 'pmediora_splint',                weight = 1 }, -- 副木
+  { item = 'pmediora_icepack',              weight = 2 }, -- 冷却パック
+  { item = 'pmediora_bulletextractionkit', weight = 1 }, -- 弾丸除去キット
+  { item = 'pmediora_surgicalforceps',      weight = 2 }, -- ピンセット
+  { item = 'pmediora_suturekit',            weight = 1 }, -- 縫合キット
+  { item = 'pmediora_needleandthread',     weight = 2 }, -- 針と糸
+  { item = 'pmediora_burncream',            weight = 3 }, -- 火傷用クリーム
 }
 
 
@@ -128,12 +160,18 @@ Config.Text = {
     deliver = 'この病院向けの箱を納品',
     cooldown = 'この調達地点はクールタイム中です。',
     inventoryFull = 'インベントリに空きがありません。',
+    collectionFailed = '物資を回収できませんでした。インベントリの空き容量と、ox_inventory/data/items.lua に pmediora_supplybox が登録されているか確認してください。',
     noDestinationBoxes = 'この病院に納品できる箱を持っていません。',
     deliveryCountLabel = '納品する段ボール数',
     deliveryCountDescription = 'この病院が納品先の段ボールだけを納品します。',
     deliveryCountInvalid = '納品数が所持数を超えているか、指定が正しくありません。',
     delivered = '医療物資を病院へ納品しました。',
     boxOpened = '段ボール #%s を開封しました。',
+    boxMenu = '医療物資段ボール',
+    boxNavigate = '配送先をマップに表示',
+    boxOpen = '箱を開封',
+    boxOpening = '医療物資段ボールを開封中...',
+    boxOpenCancelled = '開封を中止しました。',
     noItemsToSell = '売却できる医療道具を持っていません。',
     noItemsForSale = '現在購入できる医療道具はありません。',
     specialUnavailable = '本日の特注レシピが設定されていません。',
