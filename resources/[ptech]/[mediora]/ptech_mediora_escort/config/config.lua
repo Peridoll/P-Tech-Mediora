@@ -4,113 +4,152 @@ Config = {
 
   【 基本操作設定 】
   Key : 担ぐ／おろす共通キー（FiveMのキー設定で変更可能）
-  UseTarget : ox_targetからの操作を使用するか
+  UseTarget : ox_targetによる搬送操作を使用するか
+  AcceptKey : 受け入れ中や搬送中の解除に使用するXキーのコントロールID
 
   _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
+
   Key       = '',
   UseTarget = true,
+  AcceptKey = 73, -- Xキー（FiveMコントロールID）
 
 --[[_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
 
   【 EMS専用設定 】
-  EMSJobs : 運転席からPDを回収できるEMSジョブ
-  RequireDuty : EMSの勤務状態を要求するか
-  VehiclePickup : PD一括回収の有効・無効、半径、対象ジョブ
+  EMSJobs : EMS専用機能を使用できるジョブ
+  RequireDuty : EMS専用機能の使用に勤務状態を要求するか
+  PDJobs : PD優先回収の対象ジョブ
   通常搬送は職業を問わず全員が利用可能
 
   _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
+
   EMSJobs = {
     'ambulance',
   },
   RequireDuty = true,
-  VehiclePickup = {
-    Enabled   = true,
-    Range     = 8.0, -- 車両中心からの検索半径(m)
-    PDJobs    = { 'police', 'sheriff' },
-  },
+  PDJobs = { 'police', 'sheriff' },
 
 --[[_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
 
   【 距離・同期設定 】
-  Distances : 通常搬送と車両周辺の操作距離(m)
-  BreakDistance : 既存の同期・車両処理でも使う距離(m)
-  Sync : 搬送中の監視周期と復旧待機時間(ms)
+  NormalRange : 通常搬送の操作距離(m)
+  VehicleRange : EMS車内回収の検索範囲(m)
+  TargetDistance : 車両に対するTargetの操作距離(m)
+  BreakDistance : 搬送状態の同期異常時に使用する解除距離(m)
+  SyncInterval : 搬送状態の同期監視間隔(ms)
 
   _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
-  Distances = {
-    normalCarry  = 3.0,
-    vehicleCarry = 8.0,
-  },
-  BreakDistance = 12.0,
-  Sync = { Interval = 500, Timeout = 3000 },
+
+  NormalRange    = 3.0,
+  VehicleRange   = 8.0,
+  TargetDistance = 3.0,
+  BreakDistance  = 12.0,
+  SyncInterval   = 400,
+
+--[[_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+  【 車両乗降設定 】
+  VehicleStopSpeed : 乗降を許可する最高速度(m/s)。走行中は操作不可
+  VehicleTransferMs : ドア開閉を含めた乗降演出の合計時間(ms)
+  乗降途中で車両が動いた場合は自動キャンセルする
+
+  _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
+
+  VehicleStopSpeed  = 0.5,
+  VehicleTransferMs = 1000,
 
 --[[_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
 
   【 対象・NPC設定 】
   ExternalBusyKeys : 外部リソースが搬送中であることを示すState Bagキー
-  NPCResources : NPC登録を許可するサーバーリソース
+  NPCResources : NPC搬送登録を許可するサーバーリソース
   NPCOwnerKey / NPCStatusKey : 専用NPCの状態・登録判定
-  Targets : プレイヤー／NPCのダウン・死亡判定設定
+  CarryableTags : 信頼できる外部リソースが設定する搬送可能State Bagキー
 
   _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
+
   ExternalBusyKeys = {},
   NPCResources = { 'ptech_mediora_patients' },
   NPCOwnerKey = 'ptech_mediora_owner',
   NPCStatusKey = 'ptech_mediora_status',
-  -- 信頼できるサーバー側リソースが設定するState Bagキーのみ登録する。
-  -- いずれかがtrueなら、ダウン・死亡していないプレイヤーも搬送可能。
-  -- 全タグがfalse/nilで、ダウン・死亡でもなければ搬送解除。空配列なら無効。
   CarryableTags = {
-    'medioraRagdoll',
-  },
-  Targets = {
-    players = {
-      -- Wasabiのdead State Bag / Qboxの死亡メタデータを扱う。
-      down = {
-        state = {
-          { key = 'dead', values = { 'laststand', 1 } },
-        },
-        metadata = { 'inlaststand' },
-      },
-      dead = {
-        state = {
-          { key = 'dead', values = { 'dead', 2, true } },
-        },
-        metadata = { 'isdead' },
-        healthAtOrBelow = 0,
-      },
-    },
-    npcs = {
-      down = {
-        state = {
-          { key = 'emsDownDummy', values = { true } },
-        },
-        healthAtOrBelow = false,
-      },
-    },
+    'medioraRagdoll', -- 外部リソースがtrueを設定した対象を搬送可能にする
   },
 
 --[[_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
 
   【 搬送アニメーション設定 】
-  CarryModes : walk / bike / swim / actionのスタイル一覧（未登録分類は徒歩を使用）
-  同じIDのfiremanを登録すると内蔵肩担ぎより優先
+  DefaultStyle : 担ぎ方の初期値／患者側NG時のフォールバック
+  CarryModes : walk / bike / swim / actionの搬送スタイル一覧
   escorter / target : 担ぐ側・担がれる側のアニメーション
-  pos / rot : 患者の接続座標・角度
-  ※ walkに標準の肩担ぎを登録。各分類にスタイルを追加可能
+  pos / rot / bone : 患者の接続座標・角度・接続ボーン
+  vehicleAllowed : 車両上で使用できないスタイルは肩担ぎに切り替える
+  登録順が設定メニューの表示順。アニメーションには実機未検証の試作値を含む
 
   _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
+
+  DefaultStyle = 'fireman',
   CarryModes = {
     walk = {
       {
-        id          = 'fireman',
-        label       = '肩に担ぐ',
-        icon        = 'person-carry-box',
-        description = '肩に担いで運ぶ',
-        escorter    = { dict = 'missfinale_c2mcs_1', anim = 'fin_c2_mcs_1_camman', flag = 49 },
-        target      = { dict = 'nm', anim = 'firemans_carry', flag = 33 },
-        pos         = { 0.27, 0.15, 0.63 },
-        rot         = { 0.5, 0.5, 180.0 },
+        id             = 'fireman',
+        label          = '肩担ぎ',
+        escorter       = { dict = 'missfinale_c2mcs_1', anim = 'fin_c2_mcs_1_camman', flag = 49 },
+        target         = { dict = 'nm', anim = 'firemans_carry', flag = 33 },
+        pos            = {-0.14, 0.15, 0.14},
+        rot            = {0.0, -59.0, -4.5},
+        bone           = 40269,
+        vehicleAllowed = true,
+      },
+      {
+        id             = 'princess',
+        label          = 'お姫様抱っこ',
+        escorter       = { dict = 'amnilka@photopose@couple@couplefirst', anim = 'amnilka_couple_mal_002', flag = 51 },
+        target         = { dict = 'amnilka@photopose@couple@couplefirst', anim = 'amnilka_couple_fem_002', flag = 33 },
+        pos            = {0.0, 0.0, 0.0},
+        rot            = {0.0, 0.0, 0.0},
+        bone           = 0,
+        vehicleAllowed = 'bike',
+      },
+      {
+        id             = 'piggyback',
+        label          = 'おんぶ',
+        escorter       = { dict = 'mx@piggypack_a', anim = 'mxclip_a', flag = 51 },
+        target         = { dict = 'mx@piggypack_b', anim = 'mxanim_b', flag = 1 },
+        pos            = {0.0200, -0.4399, 0.4200},
+        rot            = {0.0, 0.0, 0.0},
+        bone           = 0,
+        vehicleAllowed = false,
+      },
+      {
+        id             = 'hostage',
+        label          = '人質',
+        escorter       = { dict = 'anim@gangops@hostage@', anim = 'perp_idle', flag = 51 },
+        target         = { dict = 'anim@gangops@hostage@', anim = 'victim_idle', flag = 1 },
+        pos            = {-0.3, 0.1, 0.0},
+        rot            = {0.0, 0.0, 0.0},
+        bone           = -1,
+        vehicleAllowed = false,
+      },
+      {
+        id             = 'lionking',
+        label          = 'サボテン',
+        escorter       = { dict = 'anim@heists@box_carry@', anim = 'idle', flag = 51 },
+        target         = { dict = 'missfam5_yoga', anim = 'a2_pose', flag = 51 },
+        pos            = {0.0, 0.48, 0.70},
+        rot            = {0.0, 0.0, 0.0},
+        bone           = -1,
+        vehicleAllowed = false,
+      },
+      {
+        id             = 'baby',
+        label          = '赤ちゃん',
+        escorter       = { dict = 'anim@heists@box_carry@', anim = 'idle', flag = 51 },
+        target         = { dict = 'amb@code_human_in_car_idles@generic@ps@base', anim = 'base', flag = 1 },
+        pos            = {0.350, 0.15, -0.15},
+        rot            = {-42.50, -22.50, 22.50},
+        bone           = 28252,
+        vehicleAllowed = false,
       },
     },
     bike   = {},
@@ -121,22 +160,16 @@ Config = {
 --[[_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
 
   【 通知・表示文言 】
-  Text : ox_lib通知およびox_targetの表示文言
-  現在のスクリプトが参照する文言のみを保持
+  Text : ox_lib通知などに使用する表示文言
+  既存処理から参照されるキー名は変更しない
 
   _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
+
   Text = {
-    cannotNow        = '今はエスコートできません',
-    tooMany          = 'これ以上は運べません',
-    tooFar           = '相手から離れすぎています',
-    noTarget         = '近くに設定条件を満たす相手がいません',
-    noSeat           = '空いている座席がありません',
-    keybind          = 'EMSキャリー',
-    targetEscort     = 'エスコートする',
-    targetRelease    = 'この人を離す',
-    targetPutIn      = 'エスコート中の人を乗せる',
-    targetTakeOut    = '乗っている人を連れ出す',
-    alreadyTaken     = 'その人はすでに誰かにエスコートされています',
-    putInVehicle     = '%d人を車に乗せました',
+    noTarget  = '近くに搬送できる相手がいません',
+    busy      = 'その相手は搬送できません',
+    noSeat    = '運転席以外の空席がありません',
+    moving    = '走行中は患者を乗降できません',
+    cancelled = '乗降処理をキャンセルしました',
   },
 }
