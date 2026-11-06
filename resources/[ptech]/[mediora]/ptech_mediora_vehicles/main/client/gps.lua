@@ -1,44 +1,82 @@
 local blips = {}
+local keyedVehicles = {}
+
+local function removeBlip(netId)
+    local blip = blips[netId]
+    if blip and DoesBlipExist(blip) then
+        RemoveBlip(blip)
+    end
+    blips[netId] = nil
+end
 
 RegisterNetEvent('ptech_mediora_vehicles:client:updateGps', function(vehicles)
-    local current = {}
-    local playerVehicle = GetVehiclePedIsIn(PlayerPedId(), false)
-    local playerNetId = playerVehicle ~= 0 and NetworkGetNetworkIdFromEntity(playerVehicle) or nil
+    local nextVehicles = {}
+    local currentVehicle = GetVehiclePedIsIn(cache.ped or PlayerPedId(), false)
+    local currentNetId = currentVehicle ~= 0 and NetworkGetNetworkIdFromEntity(currentVehicle) or 0
 
-    for _, info in ipairs(vehicles or {}) do
-        current[info.netId] = true
-        if playerNetId ~= info.netId then
-            local blip = blips[info.netId]
-            if not blip or not DoesBlipExist(blip.handle) then
-                local handle = AddBlipForCoord(info.x, info.y, info.z)
-                SetBlipSprite(handle, info.sprite or 56)
-                SetBlipColour(handle, info.color or 1)
-                SetBlipScale(handle, info.scale or 0.8)
-                SetBlipAsShortRange(handle, false)
+    for _, vehicle in ipairs(vehicles or {}) do
+        local netId = tonumber(vehicle.netId)
+        if netId and netId > 0 then
+            nextVehicles[netId] = vehicle
+            if netId == currentNetId then
+                removeBlip(netId)
+            else
+                local blip = blips[netId]
+                if not blip or not DoesBlipExist(blip) then
+                    blip = AddBlipForCoord(vehicle.coords.x, vehicle.coords.y, vehicle.coords.z)
+                    blips[netId] = blip
+                    SetBlipSprite(blip, Config.GpsSprite)
+                    SetBlipColour(blip, Config.GpsColour)
+                    SetBlipScale(blip, Config.GpsScale)
+                    SetBlipAsShortRange(blip, false)
+                    SetBlipDisplay(blip, 4)
+                else
+                    SetBlipCoords(blip, vehicle.coords.x, vehicle.coords.y, vehicle.coords.z)
+                end
+
+                SetBlipRotation(blip, math.floor((vehicle.heading or 0.0) + 0.5))
                 BeginTextCommandSetBlipName('STRING')
-                AddTextComponentString(info.label or '緊急車両')
-                EndTextCommandSetBlipName(handle)
-                blips[info.netId] = { handle = handle, label = info.label }
-                blip = blips[info.netId]
+                AddTextComponentString(vehicle.label or Config.GpsDisplayName)
+                EndTextCommandSetBlipName(blip)
             end
-            SetBlipCoords(blip.handle, info.x, info.y, info.z)
-        elseif blips[info.netId] and DoesBlipExist(blips[info.netId].handle) then
-            RemoveBlip(blips[info.netId].handle)
-            blips[info.netId] = nil
         end
     end
 
-    for netId, blip in pairs(blips) do
-        if not current[netId] or not DoesBlipExist(blip.handle) then
-            if DoesBlipExist(blip.handle) then RemoveBlip(blip.handle) end
-            blips[netId] = nil
+    for netId in pairs(keyedVehicles) do
+        if not nextVehicles[netId] then
+            removeBlip(netId)
         end
+    end
+
+    keyedVehicles = nextVehicles
+end)
+
+CreateThread(function()
+    while true do
+        local currentVehicle = GetVehiclePedIsIn(cache.ped or PlayerPedId(), false)
+        local currentNetId = currentVehicle ~= 0 and NetworkGetNetworkIdFromEntity(currentVehicle) or 0
+
+        for netId, vehicle in pairs(keyedVehicles) do
+            if netId == currentNetId then
+                removeBlip(netId)
+            elseif not blips[netId] or not DoesBlipExist(blips[netId]) then
+                local blip = AddBlipForCoord(vehicle.coords.x, vehicle.coords.y, vehicle.coords.z)
+                blips[netId] = blip
+                SetBlipSprite(blip, Config.GpsSprite)
+                SetBlipColour(blip, Config.GpsColour)
+                SetBlipScale(blip, Config.GpsScale)
+                SetBlipAsShortRange(blip, false)
+                SetBlipDisplay(blip, 4)
+            end
+        end
+
+        Wait(1000)
     end
 end)
 
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
-    for _, blip in pairs(blips) do
-        if DoesBlipExist(blip.handle) then RemoveBlip(blip.handle) end
+    for netId in pairs(blips) do
+        removeBlip(netId)
     end
 end)

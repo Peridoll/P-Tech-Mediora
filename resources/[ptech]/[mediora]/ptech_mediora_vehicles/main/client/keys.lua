@@ -1,46 +1,41 @@
 local lastVehicle = 0
-local requestedVehicle = 0
-local accessByModel = {}
-
-for modelName, access in pairs(MedioraVehicles.KeyAccess or {}) do
-    accessByModel[joaat(modelName)] = access
-end
-for _, asset in pairs(VehicleAssets) do
-    if asset.KeyAccess then
-        for _, modelName in ipairs(asset.Models or {}) do
-            accessByModel[joaat(modelName)] = asset.KeyAccess
-        end
-    end
-end
+local requesting = false
 
 CreateThread(function()
     while true do
-        local ped = PlayerPedId()
+        local ped = cache.ped or PlayerPedId()
         local vehicle = GetVehiclePedIsIn(ped, false)
-        local isDriver = vehicle ~= 0 and GetPedInVehicleSeat(vehicle, -1) == ped
+        local shouldRequest = vehicle ~= 0
+            and GetPedInVehicleSeat(vehicle, -1) == ped
+            and Config.VehicleModelsByHash[GetEntityModel(vehicle)]
+            and Config.VehicleModelsByHash[GetEntityModel(vehicle)].autoKeys
 
-        if isDriver and vehicle ~= lastVehicle then
-            requestedVehicle = 0
-        end
-
-        if isDriver and vehicle ~= requestedVehicle then
-            local model = GetEntityModel(vehicle)
-            local access = accessByModel[model]
-
-            if access and not exports.qbx_vehiclekeys:HasKeys(vehicle) then
-                local netId = NetworkGetNetworkIdFromEntity(vehicle)
-                if netId and netId ~= 0 then
-                    TriggerServerEvent('ptech_mediora_vehicles:server:requestDriverKey', netId)
-                    requestedVehicle = vehicle
-                end
+        if not shouldRequest then
+            lastVehicle = 0
+            requesting = false
+        elseif vehicle ~= lastVehicle and not requesting then
+            lastVehicle = vehicle
+            requesting = true
+            local netId = NetworkGetNetworkIdFromEntity(vehicle)
+            if netId and netId > 0 then
+                TriggerServerEvent('ptech_mediora_vehicles:server:requestKeys', netId)
             else
-                requestedVehicle = vehicle
+                requesting = false
             end
-        elseif not isDriver then
-            requestedVehicle = 0
         end
 
-        lastVehicle = isDriver and vehicle or 0
-        Wait(250)
+        Wait(500)
     end
+end)
+
+RegisterNetEvent('ptech_mediora_vehicles:client:keysGranted', function(netId)
+    local vehicle = NetworkGetEntityFromNetworkId(netId)
+    if vehicle ~= 0 and DoesEntityExist(vehicle) then
+        lib.notify({ description = '車両キーを受け取りました。', type = 'success' })
+    end
+    requesting = false
+end)
+
+RegisterNetEvent('ptech_mediora_vehicles:client:keysDenied', function()
+    requesting = false
 end)

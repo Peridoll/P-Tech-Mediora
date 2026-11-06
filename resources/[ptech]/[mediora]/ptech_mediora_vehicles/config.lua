@@ -1,19 +1,12 @@
-VehicleAssets = VehicleAssets or {}
-
-MedioraVehicles = {
-    KeyAccess = {
-        ambulance = { Job = 'ambulance', RequireDuty = true },
-    },
-    Callout = {
-        TargetDistance = 2.0,
-        ServerDistance = 5.0,
-        SpawnClearance = 1.5,
-    },
-    GPS = {
-        UpdateIntervalMs = 1500,
-        VisibleDistance = 1500.0,
-        Blips = {
-            ambulance = { sprite = 56, color = 1, scale = 0.8, label = '救急車' },
-        },
-    },
+Config = {
+    Job = 'ambulance',
+    GpsIntervalMs = 5000,
+    GpsSprite = 56,
+    GpsColour = 3,
+    GpsScale = 0.8,
+    GpsDisplayName = 'EMS車両',
+    TargetDistance = 2.5,
+    Vehicles = {},
 }
+
+VehicleAssets = {}

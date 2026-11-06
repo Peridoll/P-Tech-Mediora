@@ -1,40 +1,39 @@
-# P-Tech Mediora Vehicles
+# ptech_mediora_vehicles
 
-単一のFiveMリソースに共通システムを置き、個別車両の設定・メタデータ・ストリーム資産を `assets/<vehicle>/` にまとめます。車両を追加する時はリソースを分けず、個別フォルダと登録設定を追加します。
+Medical vehicle systems and the vehicle assets that use them. Shared systems live in `main/`; each vehicle's model data and features live in `assets/<asset-id>/`.
 
-## 現在の構成
+## Included
 
-- `main/`: 車両間で共有する処理
-- `assets/ptech_ems_blazer/`: EMS Blazer Aqua の設定と車両データ
-- `config.lua`: 全車両で共有する設定
+- Automatically grant the configured EMS vehicle key when an EMS employee takes its driver seat.
+- Show GPS blips for configured vehicles to players who hold that vehicle's key, and hide the blip for the vehicle the player is currently using.
+- Configure rear vehicle callouts in the vehicle asset that provides the callout vehicle. The current Blazer asset allows the `ambulance` model as a carrier.
+- Record Blazer deployment in JG Advanced Garages' outside-vehicle tracking when that resource is running.
+- Open an ox_inventory shop from the rear of configured vehicles. This remains disabled until the vehicle asset defines its stock and prices.
+- Moor the EMS Blazer in water and disable its weapon while driven.
+- Report driving, fuel and repair activity through a server-side event for a future Core aggregator.
 
-## 実装済みの機能
+## Add a vehicle asset
 
-- ブレイザーの武器抑止（登録モデルの運転席のみ）
-- 無人・水上・低速時の横流れを減らす係留アシスト
-- 係留中のエンジン停止と、降車直後の速度減衰
-- 鍵を持つプレイヤーが救急車後部からブレイザーを展開・格納
-- 勤務中のambulance職員が対象車両の運転席に乗ると、車両キーを自動取得
-- 鍵を持つプレイヤーに対する救急車・ブレイザーのGPS表示
-- 展開登録が0件なら、後部呼び出しターゲットを登録しない
+Create `assets/<asset-id>/config.lua` and assign a `VehicleAssets.<asset-id>` table. Add each model to `models`; the shared systems use these entries to build model and hash lookups at resource start. To let a vehicle call out the Blazer, add its model name to `assets/ptech_ems_blazer/config.lua` under `callout.carrierModels`.
 
-集計・ランキング、整備や給油の作業履歴、ガレージ履歴、輸送費用の調整はCore側の連携仕様が決まってから追加します。
+Vehicle model names are spawn names. Keep custom names namespaced (for example, `pemsblazer`) so they do not replace a base-game model.
 
-## 依存リソース
+## Activity event for Core
 
-- `ox_lib`
-- `ox_target`
-- `qbx_vehiclekeys`
-- `qbx_core`
+Vehicles emits a local server event after a validated activity report:
 
-リソース名は `ptech_mediora_vehicles` です。必要リソースを先に起動してから `ensure ptech_mediora_vehicles` を実行してください。
+```lua
+AddEventHandler('ptech_mediora_vehicles:server:activity', function(source, record)
+    -- record.type: vehicle_drive_meters | vehicle_fuel_added | vehicle_repaired
+    -- record.citizenid, record.plate, record.amount, record.unit, record.timestamp
+end)
+```
 
-## 開発上の確認事項
+The event is intentionally local to the server. Core should subscribe and aggregate it; this resource does not write ranking data or maintain a leaderboard. Medical treatment activity belongs to the medical workflow and should be sent by that resource to Core.
 
-- ブレイザーの `.yft` モデル2点が未収録のため、現状のままでは車両モデルを完全にスポーンできません。元リソースの `.ytd` とメタデータは収録済みです。
-- 後部ターゲットの位置、展開オフセット、OneSyncでの係留物理は実サーバー上で調整が必要です。
-- ガレージとの永続化・車両所有者記録はまだ接続していません。現在の展開車両はリソース稼働中のペア情報で管理します。
+## External integrations and open items
 
-## クレジット
-
-EMS Blazer Aquaは **Police Off-Road Pack [Add-On | Template] 2.0**（SAS994 & ShaoyeBen / RiME557）を原作とする派生物です。原作者は適切なクレジット付きのMPサーバー利用を許可し、無編集での再アップロードを禁止しています。原作者と各素材のクレジット、利用条件は [docs/CREDITS.md](docs/CREDITS.md) を参照してください。EMS塗装・FiveM構成・武器抑止・係留アシストはP-Techによる変更です。原作の権利はP-Techに帰属しません。
+- JG Advanced Garages tracks Blazers spawned by this resource as outside vehicles. Normal garage checkout/store actor history must be added through the garage's configured hooks; it cannot be inferred from this resource.
+- Transfer discounts are configured in JG Advanced Garages v4, outside this resource. Set the EMS rate in that resource's settings.
+- The trunk shop implementation is ready, but stock and prices need to be supplied in the vehicle asset config before it becomes available.
+- Core is not included in this repository version, so activity aggregation and rankings need the Core-side listener.
