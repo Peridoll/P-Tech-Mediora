@@ -1,7 +1,10 @@
 Config = {}
 
 Config.Tablet = {
-    item = 'mediora_tablet',
+    item = 'pmediora_tablet',
+    -- Optional dedicated permission; existing Qbox admin/god ACEs also work.
+    adminAce = 'mediora.admin',
+    adminAces = { 'admin', 'god' },
 }
 
 Config.Points = {

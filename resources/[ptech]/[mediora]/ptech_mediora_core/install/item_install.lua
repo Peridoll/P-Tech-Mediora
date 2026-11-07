@@ -7,7 +7,7 @@
     consume = 0,
     description = '',
     client = {
-      image = 'tablet.png',
+      image = 'pmediora_tablet.png',
       export = 'ptech_mediora_core.useTablet',
     },
   },

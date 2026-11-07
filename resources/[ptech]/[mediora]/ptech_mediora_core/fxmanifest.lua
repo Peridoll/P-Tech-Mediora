@@ -5,7 +5,7 @@ lua54 'yes'
 name 'ptech_mediora_core'
 author 'P-Tech'
 description 'Mediora Core'
-version '0.2.0'
+version '0.2.1'
 
 dependencies {
     'ox_inventory',
@@ -16,7 +16,7 @@ dependencies {
 
 shared_scripts {
     '@ox_lib/init.lua',
-    'config/config.lua',
+    'config.lua',
 }
 
 ui_page 'main/ui/index.html'
@@ -37,4 +37,5 @@ client_scripts {
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
     'main/server/server.lua',
+    'main/server/tablet_admin.lua',
 }

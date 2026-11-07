@@ -1,0 +1,48 @@
+# タブレット構成
+
+- ロゴは大きなMとEDIORA。
+- 左リストはホームのみ、右側のホームは空。
+- 左下の設定ボタンで設定ページを表示。
+- 設定ページ左下のリソース管理は管理者だけに表示。
+- リソース管理はMedioraリソースの一覧・稼働状況と更新ボタンを提供。
+- 各Medioraリソースは起動・停止・再起動が可能。Coreは再起動のみ。
+- Core再起動時は全員のタブレットを閉じる。再起動後はアイテムで開き直す。
+- 稼働状態に応じて操作ボタンを無効化し、サーバーでも対象・操作・権限を検証。
+
+管理権限は Config.Tablet.adminAce（初期値 mediora.admin）、または
+Config.Tablet.adminAces（初期値 admin / god）のいずれか。
+Qboxで既にadmin/godのACEがある人は、追加設定なしで利用可能。
+既存の管理者グループに権限を与える場合はserver.cfgへ追加：
+
+    add_ace group.admin mediora.admin allow
+
+権限はサーバーで毎回確認。一般ユーザーからの直接取得も拒否する。
+権限を設定してからタブレットを開き直す。
+
+Coreの自己再起動用にserver.cfgへ追加（install/tablet_permissions.cfgにも収録）：
+
+    add_ace resource.ptech_mediora_core command.restart allow
+
+操作ログはサーバーコンソールに記録。稼働環境での動作確認は別途必要。
+
+操作中は「起動中／停止中／再起動中」を表示。
+サーバーがリソースの started / stopped 状態を確認してから完了を返す。
+再起動中の単なるコマンド受付を完了として表示しない。
+確認期限を過ぎた場合は失敗・結果未確認を表示し、更新で状態を再確認できる。
+これはリソースの起動状態確認であり、内部機能・DBの正常性の保証ではない。
+各行に最新の操作結果と時刻を表示。通常リソースの履歴はCore再起動でクリア。
+Core自身の再起動記録はKVPへ保存し、次回起動時に状態を確認して更新。
+開き直したリソース管理一覧のCore行で再起動結果を確認できる。
+
+## 標準コマンド実行
+
+各操作はFiveM標準の start / stop / restart コマンドをサーバー側で実行する。
+プレイヤーの権限を確認した上でCoreが実行し、任意のコマンドやMediora以外のリソースは受け付けない。
+再起動完了は停止・起動イベントの両方と started 状態を確認して判定する。
+既にstartedだっただけで再起動成功と判定しない。
+server.cfgで次の設定ファイルを読み込む：
+
+    exec @ptech_mediora_core/install/tablet_permissions.cfg
+
+またはファイル内の command.start / command.stop / command.restart の3つのACEをserver.cfgに追加する。
+設定追加時はサーバーコンソールでexecを実行して即時反映できる。

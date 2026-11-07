@@ -12,7 +12,11 @@ local function closeTablet()
 end
 
 local function openTablet()
-    if not ready or IsPauseMenuActive() then return false end
+    if not ready then
+        lib.notify({ type = 'error', description = 'タブレット画面の準備ができていません。Coreの起動ログを確認してください。' })
+        return false
+    end
+    if IsPauseMenuActive() then return false end
     if (exports.ox_inventory:Search('count', Config.Tablet.item) or 0) < 1 then
         lib.notify({ type = 'error', description = 'Medioraタブレットを所持していません。' })
         return false
@@ -30,15 +34,24 @@ exports('useTablet', function(data)
         lib.notify({ type = 'error', description = '現在タブレットを開けません。少し待ってもう一度使用してください。' })
         return
     end
-    if type(data) ~= 'table' or data.name ~= Config.Tablet.item then return end
+    if type(data) ~= 'table' or data.name ~= Config.Tablet.item then
+        lib.notify({ type = 'error', description = 'タブレットのアイテム名とCoreの設定が一致していません。' })
+        return
+    end
     usingItem = true
-    local ok = pcall(function()
+    local accepted = false
+    local ok, err = pcall(function()
         exports.ox_inventory:useItem(data, function(used)
-            if used then openTablet() end
+            if used then accepted = true; openTablet() end
         end)
     end)
     usingItem = false
-    if not ok then lib.notify({ type = 'error', description = 'タブレットの使用に失敗しました。' }) end
+    if not ok then
+        print(('[ptech_mediora_core] tablet use failed: %s'):format(tostring(err)))
+        lib.notify({ type = 'error', description = 'タブレットの使用に失敗しました。F8のエラーを確認してください。' })
+    elseif not accepted then
+        lib.notify({ type = 'error', description = 'インベントリが使用を許可しませんでした。行動を終えてからもう一度使用してください。' })
+    end
 end)
 
 AddEventHandler('ox_inventory:itemCount', function(itemName, totalCount)
@@ -46,6 +59,7 @@ AddEventHandler('ox_inventory:itemCount', function(itemName, totalCount)
 end)
 
 RegisterNUICallback('tabletReady', function(_, cb)
+    if not ready then print('[ptech_mediora_core] Tablet 0.2.1: UI ready') end
     ready = true
     cb({ ok = true })
 end)
@@ -68,7 +82,31 @@ RegisterNUICallback('tabletProfile', function(_, cb)
 end)
 
 exports('openTablet', openTablet)
+for _, route in ipairs({ 'tabletAccess', 'tabletResources', 'tabletResourceAction' }) do
+    local callbackRoute = route
+    RegisterNUICallback(callbackRoute, function(data, cb)
+        if not opened then cb({ ok = false, error = 'closed' }) return end
+        local requestGeneration = generation
+        local ok, result = pcall(function()
+            local delay = 1000
+            if callbackRoute == 'tabletAccess' then delay = false end
+            return lib.callback.await('ptech_mediora_core:' .. callbackRoute, delay, data)
+        end)
+        if not opened or requestGeneration ~= generation then
+            cb({ ok = false, error = 'closed' })
+            return
+        end
+        cb(ok and result or { ok = false, error = 'unavailable' })
+    end)
+end
+
 exports('closeTablet', closeTablet)
+
+RegisterNetEvent('ptech_mediora_core:tabletRestarting', function()
+    closeTablet()
+end)
+
+print(('[ptech_mediora_core] Tablet 0.2.1: useTablet registered (item=%s)'):format(Config.Tablet.item))
 
 AddEventHandler('QBCore:Client:OnPlayerUnload', closeTablet)
 AddEventHandler('onResourceStop', function(resource)
