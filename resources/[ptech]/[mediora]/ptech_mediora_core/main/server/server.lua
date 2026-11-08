@@ -1,78 +1,9 @@
 local currentResource = GetCurrentResourceName()
 local locks = {}
 local dutySessions = {}
-local databaseReady = false
-local databaseError
 
 local function log(message)
     print(('[%s] %s'):format(currentResource, message))
-end
-
-local function initializeDatabase()
-    local statements = {
-        [[
-            CREATE TABLE IF NOT EXISTS `ptech_mediora_core_accounts` (
-                `citizenid` VARCHAR(64) NOT NULL,
-                `mp_balance` BIGINT NOT NULL DEFAULT 0,
-                `mp_earned` BIGINT NOT NULL DEFAULT 0,
-                `duty_seconds` BIGINT NOT NULL DEFAULT 0,
-                `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                PRIMARY KEY (`citizenid`)
-            )
-        ]],
-        [[
-            CREATE TABLE IF NOT EXISTS `ptech_mediora_core_point_log` (
-                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-                `citizenid` VARCHAR(64) NOT NULL,
-                `delta` BIGINT NOT NULL,
-                `balance_after` BIGINT NOT NULL,
-                `action` VARCHAR(24) NOT NULL,
-                `source_resource` VARCHAR(64) NOT NULL,
-                `reason` VARCHAR(255) NOT NULL,
-                `actor_citizenid` VARCHAR(64) NULL,
-                `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (`id`),
-                KEY `idx_mediora_core_point_log_citizenid` (`citizenid`),
-                KEY `idx_mediora_core_point_log_created_at` (`created_at`)
-            )
-        ]],
-        [[
-            CREATE TABLE IF NOT EXISTS `ptech_mediora_core_activity_stats` (
-                `citizenid` VARCHAR(64) NOT NULL,
-                `metric_key` VARCHAR(64) NOT NULL,
-                `total` DECIMAL(20, 3) NOT NULL DEFAULT 0,
-                `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                PRIMARY KEY (`citizenid`, `metric_key`),
-                KEY `idx_mediora_core_activity_metric_total` (`metric_key`, `total`)
-            )
-        ]],
-        [[
-            CREATE TABLE IF NOT EXISTS `ptech_mediora_core_activity_log` (
-                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-                `citizenid` VARCHAR(64) NOT NULL,
-                `metric_key` VARCHAR(64) NOT NULL,
-                `amount` DECIMAL(20, 3) NOT NULL,
-                `source_resource` VARCHAR(64) NOT NULL,
-                `reason` VARCHAR(255) NOT NULL DEFAULT '',
-                `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (`id`),
-                KEY `idx_mediora_core_activity_log_citizenid` (`citizenid`),
-                KEY `idx_mediora_core_activity_log_metric` (`metric_key`),
-                KEY `idx_mediora_core_activity_log_created_at` (`created_at`)
-            )
-        ]],
-    }
-
-    for _, statement in ipairs(statements) do
-        MySQL.query.await(statement)
-    end
-
-    log('MP・業務実績・勤務時間のテーブルを確認しました。')
-end
-
-local function waitForDatabase()
-    while not databaseReady and not databaseError do Wait(0) end
-    if databaseError then error(databaseError, 2) end
 end
 
 local function notify(source, message, notifyType)
@@ -158,7 +89,6 @@ local function isInteger(value)
 end
 
 local function changePoints(source, amount, action, reason, actorSource, sourceResource)
-    waitForDatabase()
     if not isInteger(source) or source < 1 or not isInteger(amount) or amount == 0
         or math.abs(amount) > Config.Points.maxChangePerTransaction then
         return false, 'invalid_arguments'
@@ -224,7 +154,6 @@ local function spendPoints(source, amount, reason)
 end
 
 local function getPoints(source)
-    waitForDatabase()
     local citizenid = getCitizenId(source)
     if not citizenid then return nil end
     local row = MySQL.single.await([[
@@ -244,7 +173,6 @@ local function getPoints(source)
 end
 
 local function getProfile(source)
-    waitForDatabase()
     local citizenid = getCitizenId(source)
     if not citizenid then return nil end
 
@@ -276,16 +204,10 @@ local function getProfile(source)
         },
         dutySeconds = account and tonumber(account.duty_seconds) or 0,
         activities = activities,
-        available = {
-            points = true,
-            duty = true,
-            activity = true,
-        },
     }
 end
 
 local function recordActivity(source, metricKey, amount, reason)
-    waitForDatabase()
     if not isInteger(source) or source < 1 then return false, 'invalid_source' end
     if type(metricKey) ~= 'string' or #metricKey < 1 or #metricKey > Config.ActivityTracking.maxKeyLength then
         return false, 'invalid_metric_key'
@@ -324,7 +246,6 @@ local function recordActivity(source, metricKey, amount, reason)
 end
 
 local function getActivityTotal(source, metricKey)
-    waitForDatabase()
     local citizenid = getCitizenId(source)
     if not citizenid or type(metricKey) ~= 'string' then return nil end
     local total = MySQL.scalar.await([[
@@ -335,7 +256,6 @@ local function getActivityTotal(source, metricKey)
 end
 
 local function getLeaderboard(metricKey, limit)
-    waitForDatabase()
     if type(metricKey) ~= 'string' or #metricKey < 1 or #metricKey > Config.ActivityTracking.maxKeyLength
         or not metricKey:match('^[a-z0-9_%-]+$') then
         return nil, 'invalid_metric_key'
@@ -367,7 +287,6 @@ local function getLeaderboard(metricKey, limit)
 end
 
 local function addDutySeconds(citizenid, seconds)
-    waitForDatabase()
     if not citizenid or seconds <= 0 then return true end
     local ok, err = pcall(function()
         MySQL.update.await([[
@@ -398,7 +317,6 @@ local function isTrackedDuty(job)
 end
 
 local function syncDuty(source, jobOverride)
-    waitForDatabase()
     local player = getPlayer(source)
     if not player or not player.PlayerData then
         flushDuty(source)
@@ -436,34 +354,6 @@ exports('AddPoints', addPoints)
 exports('SpendPoints', spendPoints)
 exports('GetPoints', getPoints)
 exports('GetProfile', getProfile)
-
--- Only return the requesting player's profile. No client-selected citizen IDs.
-local tabletRequests = {}
-lib.callback.register('ptech_mediora_core:tabletProfile', function(source)
-    if (exports.ox_inventory:GetItemCount(source, Config.Tablet.item) or 0) < 1 then
-        return { ok = false, error = 'item_required' }
-    end
-    if tabletRequests[source] then return { ok = false, error = 'busy' } end
-    if not databaseReady then return { ok = false, error = 'unavailable' } end
-    local player = getPlayer(source)
-    local data = player and player.PlayerData
-    if not data then return { ok = false, error = 'player_not_found' } end
-    tabletRequests[source] = true
-    local ok, profile = pcall(getProfile, source)
-    SetTimeout(1500, function() tabletRequests[source] = nil end)
-    if not ok or not profile then return { ok = false, error = 'unavailable' } end
-    if getCitizenId(source) ~= profile.citizenid then return { ok = false, error = 'player_not_found' } end
-    local info = data.charinfo or {}
-    local job = data.job or {}
-    profile.name = ((info.firstname or '') .. ' ' .. (info.lastname or '')):match('^%s*(.-)%s*$')
-    profile.job = job.label or job.name or '未所属'
-    profile.onDuty = job.onduty == true
-    local session = dutySessions[source]
-    if session and session.citizenid == profile.citizenid then
-        profile.dutySeconds = profile.dutySeconds + math.max(0, os.time() - session.lastSavedAt)
-    end
-    return { ok = true, profile = profile }
-end)
 exports('RecordActivity', recordActivity)
 exports('GetActivityTotal', getActivityTotal)
 exports('GetLeaderboard', getLeaderboard)
@@ -503,13 +393,7 @@ end)
 AddEventHandler('onResourceStart', function(resourceName)
     if resourceName ~= currentResource then return end
     CreateThread(function()
-        local ok, err = pcall(initializeDatabase)
-        if not ok then
-            databaseError = ('Core database initialization failed: %s'):format(tostring(err))
-            log(databaseError)
-            return
-        end
-        databaseReady = true
+        Wait(1000)
         for _, source in ipairs(GetPlayers()) do
             syncDuty(tonumber(source))
         end
@@ -553,4 +437,4 @@ RegisterCommand(Config.Points.manualGrantCommand, function(source, args)
     log(('%s: %s'):format(source > 0 and (getCitizenId(source) or 'unknown') or 'console', message))
 end, true)
 
-log(('共有%sと右側表示を起動しました。'):format(Config.Points.label))
+log(('共有%s・業務実績・勤務時間記録を起動しました。SQL導入を確認してください。'):format(Config.Points.label))

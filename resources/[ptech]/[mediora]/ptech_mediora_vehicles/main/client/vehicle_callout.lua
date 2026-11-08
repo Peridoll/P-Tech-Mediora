@@ -1,81 +1,60 @@
+local carriers = {}
 local deployedByCarrier = {}
 
-CreateThread(function()
-    Wait(1000)
-    TriggerServerEvent('ptech_mediora_vehicles:server:requestCalloutState')
-end)
-
-local function hasMedicalJob()
-    local playerData = exports.qbx_core:GetPlayerData()
-    return playerData and playerData.job and playerData.job.name == Config.Job
+for assetId, vehicleConfig in pairs(VehicleAssets) do
+    local callout = vehicleConfig.Callout
+    if callout then
+        for _, modelName in ipairs(callout.CarrierModels or {}) do
+            carriers[joaat(modelName)] = { assetId = assetId, config = callout }
+        end
+    end
 end
 
-RegisterNetEvent('ptech_mediora_vehicles:client:calloutState', function(carrierNetId, blazerNetId)
-    carrierNetId = tonumber(carrierNetId)
-    if not carrierNetId then return end
+if next(carriers) then
+    RegisterNetEvent('ptech_mediora_vehicles:client:setCalloutState', function(carrierNetId, deployedNetId)
+        deployedByCarrier[carrierNetId] = deployedNetId
+    end)
 
-    if blazerNetId then
-        deployedByCarrier[carrierNetId] = tonumber(blazerNetId)
-    else
-        deployedByCarrier[carrierNetId] = nil
-    end
-end)
+    CreateThread(function()
+        Wait(1000)
+        TriggerServerEvent('ptech_mediora_vehicles:server:requestCalloutState')
+    end)
 
-RegisterNetEvent('ptech_mediora_vehicles:client:calloutResult', function(success, message)
-    lib.notify({
-        description = message or (success and '車両を呼び出しました。' or '車両を呼び出せませんでした。'),
-        type = success and 'success' or 'error',
-    })
-end)
-
-if next(Config.CalloutCarriers) then
-    exports.ox_target:addGlobalVehicle({
-        {
-            name = 'ptech_mediora_vehicles_callout_deploy',
-            bones = { 'boot' },
+    local options = {}
+    for modelHash, info in pairs(carriers) do
+        local targetModelHash = modelHash
+        local targetInfo = info
+        options[#options + 1] = {
+            name = ('ptech_mediora_vehicles:callout:%s'):format(targetInfo.assetId),
             icon = 'fa-solid fa-truck-medical',
-            label = 'ブレイザーを呼び出す',
-            distance = Config.TargetDistance,
-            canInteract = function(entity)
-                if not hasMedicalJob() then return false end
-                local netId = NetworkGetNetworkIdFromEntity(entity)
-                return Config.CalloutCarriers[GetEntityModel(entity)] ~= nil and not deployedByCarrier[netId]
-            end,
-            onSelect = function(data)
-                TriggerServerEvent(
-                    'ptech_mediora_vehicles:server:callout',
-                    'deploy',
-                    NetworkGetNetworkIdFromEntity(data.entity)
-                )
-            end,
-        },
-        {
-            name = 'ptech_mediora_vehicles_callout_store',
+            label = targetInfo.config.TargetLabel or '車両を出す / 格納する',
             bones = { 'boot' },
-            icon = 'fa-solid fa-warehouse',
-            label = 'ブレイザーを格納する',
-            distance = Config.TargetDistance,
+            distance = MedioraVehicles.Callout.TargetDistance,
             canInteract = function(entity)
-                if not hasMedicalJob() then return false end
-                local netId = NetworkGetNetworkIdFromEntity(entity)
-                return Config.CalloutCarriers[GetEntityModel(entity)] ~= nil and deployedByCarrier[netId] ~= nil
+                if GetEntityModel(entity) ~= targetModelHash then return false end
+                local playerPed = PlayerPedId()
+                if IsPedInAnyVehicle(playerPed, false) then return false end
+                return exports.qbx_vehiclekeys:HasKeys(entity)
             end,
             onSelect = function(data)
-                TriggerServerEvent(
-                    'ptech_mediora_vehicles:server:callout',
-                    'store',
-                    NetworkGetNetworkIdFromEntity(data.entity)
-                )
+                local carrier = data.entity
+                local carrierNetId = NetworkGetNetworkIdFromEntity(carrier)
+                local deployedNetId = deployedByCarrier[carrierNetId]
+                if deployedNetId and NetworkDoesNetworkIdExist(deployedNetId) then
+                    TriggerServerEvent('ptech_mediora_vehicles:server:storeCallout', carrierNetId, deployedNetId)
+                else
+                    TriggerServerEvent('ptech_mediora_vehicles:server:deployCallout', carrierNetId)
+                end
             end,
-        },
-    })
-end
-
-AddEventHandler('onResourceStop', function(resource)
-    if resource == GetCurrentResourceName() then
-        exports.ox_target:removeGlobalVehicle({
-            'ptech_mediora_vehicles_callout_deploy',
-            'ptech_mediora_vehicles_callout_store',
-        })
+        }
     end
-end)
+    exports.ox_target:addGlobalVehicle(options)
+
+    AddEventHandler('onResourceStop', function(resource)
+        if resource == GetCurrentResourceName() then
+            for _, option in ipairs(options) do
+                exports.ox_target:removeGlobalVehicle(option.name)
+            end
+        end
+    end)
+end

@@ -115,8 +115,6 @@
 .sheet-map { margin: 16px 0 0; padding: 10px 6px; border: 1px solid #cbd5db; border-radius: 5px; background: #eef3f4; text-align: center; }
 .sheet-map figcaption { font-size: 12px; font-weight: 700; }
 .sheet-map svg { display: block; width: 100%; max-width: 200px; margin: 12px auto; }
-.sheet-map [data-part] { fill: #c9d7dc; stroke: #647f8c; stroke-width: 1; }
-.sheet-map [data-part].injured { fill: #e98186; stroke: #9c2435; }
 @media (max-width: 480px) {
   .sheet-layout { grid-template-columns: minmax(0, 1fr) minmax(76px, 26%); gap: 8px; }
   .sheet-map { margin-top: 0; }
@@ -152,8 +150,6 @@
 .treatment-tool { padding: 12px; border: 1px solid #a9c4bd; border-radius: 8px; background: #edf5f2; color: #214741; text-align: left; cursor: grab; }
 .treatment-tool:active { cursor: grabbing; }
 #treatment-map { margin: 0; }
-.treatment-mode #chart-body-map [data-part].drop-ready { fill: #67d9bc; stroke: #176956; stroke-width: 2; }
-.treatment-mode #chart-body-map [data-part].drop-ready:hover { fill: #a3f2d8; }
 .sheet-record { position: relative; }
 .treatment-mode .chart-list-section,
 .treatment-mode #chart-detail > .sheet-heading,
@@ -184,7 +180,7 @@
 .treatment-screen #treatment-patient { font-size: 14px; }
 #treatment-tools { grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr)); }
 .treatment-tool { min-height: 44px; font-size: 12px; }
-.treatment-mode .chart-content { padding-bottom: 280px; }
+
 
 @media (min-width: 721px) {
   .chart-columns { container-type: inline-size; }
@@ -251,7 +247,6 @@
 .treatment-tool img, .treatment-drag-preview img { width: 48px; height: 48px; filter: drop-shadow(0 3px 4px #0007); }
 .treatment-drag-preview { width: 96px; box-shadow: 0 8px 22px #0008; border-color: #71dac7; }
 #chart-treatment-result { background: #203b45; color: #dbefed; }
-.treatment-mode #chart-body-map [data-part].drop-ready { filter: drop-shadow(0 0 3px #43b99c); }
 /* The chart is a sheet inside the tablet, with the treatment window above it. */
 #chart-detail {
   border-color: #d6d1c5;
@@ -311,6 +306,8 @@
   border: 1px dashed #a4afa3;
   border-radius: 50%;
   font-weight: 700;
+  white-space: pre;
+  text-align: center;
 }
 .chart-stamp:hover:not(:disabled) { border-color: #50746d; background: #edf3e9; }
 .chart-stamp.stamped { opacity: 1; }
@@ -324,7 +321,61 @@
 }
 #chart-revive.stamped .chart-stamp-mark { transform: rotate(6deg); }
 .chart-body-figure { position: relative; width: min(100%, 200px); margin: 12px auto; }
-.chart-body-figure svg { margin: 0; }
+#chart-body-area.photo-backed { aspect-ratio: 144 / 228; }
+#chart-body-map { margin: 0; }
+#chart-body-map[hidden] { display: none; }
+#chart-body-map [data-part] { fill: #c9d7dc; stroke: #647f8c; stroke-width: 1; }
+#chart-body-map [data-part].injured { fill: #e98186; stroke: #9c2435; }
+.treatment-mode #chart-body-map [data-part].drop-ready { fill: #67d9bc; stroke: #176956; stroke-width: 2; }
+.treatment-mode #chart-body-map [data-part].drop-ready:hover { fill: #a3f2d8; }
+.treatment-mode #chart-body-map [data-part].drop-ready { filter: drop-shadow(0 0 3px #43b99c); }
+#chart-body-map [data-part].healed:not(.injured) { fill: #75cba5; stroke: #30765a; }
+#chart-photo-status { margin: 0 0 8px; color: #4b675e; font-size: 11px; }
+#chart-callout-lines[hidden] { display: none; }
+#chart-photo, #chart-callout-lines, #chart-callouts { position: absolute; inset: 0; width: 100%; height: 100%; }
+#chart-photo { object-fit: cover; background: #253633; border-radius: 5px; pointer-events: none; }
+#chart-callout-lines { margin: 0; pointer-events: none; overflow: visible; }
+#chart-callout-lines line { stroke: #9a3949; stroke-width: .65; }
+#chart-callout-lines circle { fill: #b94454; stroke: #fff; stroke-width: .5; }
+#chart-callouts { pointer-events: none; }
+#chart-body-area:not(.photo-backed) #chart-callouts {
+  position: static;
+  display: grid;
+  gap: 5px;
+  height: auto;
+}
+#chart-body-area:not(.photo-backed) .chart-callout {
+  position: static;
+  width: 100%;
+  max-width: none;
+}
+#chart-body-area:has(#chart-body-map[hidden]):not(.photo-backed) #chart-health { position: static; transform: none; margin-top: 8px; }
+.sheet-map .chart-callout.callout-healed { background: #edf6ef; border-color: #98b8a5; color: #365a46; }
+.sheet-map .chart-callout {
+  position: absolute;
+  left: 0;
+  z-index: 1;
+  width: max-content;
+  max-width: 53%;
+  padding: 3px 5px;
+  border: 1px solid #d5919b;
+  border-radius: 4px;
+  background: #fff3f3;
+  color: #682938;
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: left;
+  pointer-events: auto;
+  overflow-wrap: anywhere;
+}
+.sheet-map .chart-callout.callout-right { left: auto; right: 0; }
+.chart-callout strong { display: block; }
+.chart-callout-detail { display: none; margin-top: 3px; }
+.chart-callout-detail small { display: block; margin-top: 3px; }
+.sheet-map .chart-callout:is(:hover, :focus, .drop-ready) { z-index: 3; max-width: 75%; box-shadow: 0 2px 8px #20332a45; }
+.chart-callout:is(:hover, :focus, .drop-ready) .chart-callout-detail { display: block; }
+.sheet-map .chart-callout.drop-ready { background: #e3f8ee; border-color: #298368; color: #205947; }
+#chart-health { z-index: 2; }
 #chart-health {
   position: absolute;
   top: 8%;
@@ -363,4 +414,6 @@
 .chart-billing-window label { display: grid; gap: 6px; }
 .chart-billing-window select { padding: 8px; border-radius: 5px; font: inherit; }
 #chart-bill-result { color: #ffb7b7; }
-.sheet-map [data-part].healed:not(.injured) { fill: #75cba5; stroke: #30765a; }
+
+.chart-content { scrollbar-gutter: stable; }
+.treatment-screen { max-height: 480px; overflow: auto; }

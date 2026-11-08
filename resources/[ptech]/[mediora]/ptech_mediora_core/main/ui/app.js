@@ -10,7 +10,6 @@ const panels = {};
 let activeId = null;
 let switchKey = 'Z';
 let panelHidden = false;
-
 function render() {
     const ids = Object.keys(panels);
     if (ids.length === 0) {

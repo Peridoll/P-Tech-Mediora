@@ -1,5 +1,62 @@
 local activeExamination
 
+local photoBones = {
+    head = 31086, upper_body = 24818, lower_body = 11816,
+    right_arm = 22711, left_arm = 61163, right_leg = 36864, left_leg = 63931,
+}
+
+local function closePhotoCamera(examination)
+    if not examination.photoCamera then return end
+    RenderScriptCams(false, false, 0, true, true)
+    DestroyCam(examination.photoCamera, false)
+    examination.photoCamera = nil
+end
+
+local function captureChartPhoto(examination, target, chartId)
+    if GetResourceState('screenshot-basic') ~= 'started' or not MedicalWoundClient then return end
+    local player = GetPlayerFromServerId(target)
+    if player == -1 then return end
+    local patient = GetPlayerPed(player)
+    if patient == 0 or not HasEntityClearLosToEntity(PlayerPedId(), patient, 17) then return end
+
+    local position = GetEntityCoords(patient)
+    local offset = GetEntityCoords(PlayerPedId()) - position
+    local direction = math.atan(offset.y, offset.x)
+    local down = IsPedDeadOrDying(patient, true) or IsPedRagdoll(patient)
+    local camera = CreateCamWithParams('DEFAULT_SCRIPTED_CAMERA',
+        position.x + math.cos(direction) * 3.2, position.y + math.sin(direction) * 3.2,
+        position.z + (down and 2.2 or 0.75), 0.0, 0.0, 0.0, 43.0, true, 2)
+    if camera == 0 then return end
+    examination.photoCamera = camera
+    local ok, err = pcall(function()
+        PointCamAtCoord(camera, position.x, position.y, position.z + (down and 0.15 or 0.10))
+        RenderScriptCams(true, false, 0, true, true)
+        local readyAt = GetGameTimer() + 150
+        while activeExamination == examination and GetGameTimer() < readyAt do
+            HideHudAndRadarThisFrame()
+            Wait(0)
+        end
+        if activeExamination ~= examination then return end
+        local points = {}
+        for part, bone in pairs(photoBones) do
+            local coords = GetPedBoneCoords(patient, bone, 0.0, 0.0, 0.0)
+            local visible, x, y = GetScreenCoordFromWorldCoord(coords.x, coords.y, coords.z)
+            if visible then points[part] = { x = x, y = y } end
+        end
+        if not points.head or not points.upper_body then return end
+        local complete = false
+        lib.callback('ptech_mediora_medical:capturePhoto', false, function() complete = true end, target, chartId, points)
+        local deadline = GetGameTimer() + 3000
+        while not complete and activeExamination == examination and GetGameTimer() < deadline do
+            HideHudAndRadarThisFrame()
+            DisableAllControlActions(0)
+            Wait(0)
+        end
+    end)
+    closePhotoCamera(examination)
+    if not ok and Config.Debug then print('[ptech_mediora_medical:photo] ' .. tostring(err)) end
+end
+
 -- 患者向けの表示だけを更新する。操作権や死亡・負傷状態は変更しない。
 RegisterNetEvent('ptech_mediora_medical:examinationStatus', function(active)
     MedicalNuiSend('clinical', { action = 'examination:status', data = { active = active == true } })
@@ -39,7 +96,7 @@ end
 local function clearExaminationProgress(examination)
     if not examination.progressing then return end
     examination.progressing = false
-    SendNUIMessage({ action = 'exam-progress' })
+    MedicalProgress.stop(examination.progress)
     if examination.animation then
         local animation = examination.animation
         StopAnimTask(examination.ped, animation.dict, animation.clip, 2.0)
@@ -52,6 +109,7 @@ local function cancelActiveExamination()
     activeExamination = nil
     if examination then
         clearExaminationProgress(examination)
+        closePhotoCamera(examination)
         if examination.target then
             TriggerServerEvent('ptech_mediora_medical:cancelExamination', examination.target)
         end
@@ -64,7 +122,7 @@ AddEventHandler('QBCore:Client:OnPlayerUnload', cancelActiveExamination)
 -- This is the single entrance for commands and ox_target. Never trust this
 -- target alone: the server checks permissions, identity and range at each stage.
 local function startDiagnosis(target)
-    if activeExamination then return end
+    if activeExamination or MedicalTreatment.isBusy() then return end
     local examination = {}
     activeExamination = examination
     local authorizedTarget
@@ -81,9 +139,10 @@ local function startDiagnosis(target)
         authorizedTarget = target
 
         -- 先に観察し、部位数からサーバーが演出時間を決める。取得失敗を無傷と混同しない。
-        local success, injuries = pcall(function()
-            return exports.wasabi_ambulance:diagnosePlayer(target)
-        end)
+        local success, injuries = true, {}
+        if not MedicalWoundClient then
+            success, injuries = pcall(function() return exports.wasabi_ambulance:diagnosePlayer(target) end)
+        end
         if activeExamination ~= examination then return end
         if Config.Debug then
             print(('[ptech_mediora_medical] serverId=%s success=%s returnType=%s\n%s')
@@ -92,6 +151,13 @@ local function startDiagnosis(target)
         local confirm = lib.callback.await('ptech_mediora_medical:confirm', false, target, injuries, success)
         if activeExamination ~= examination then return end
         if not confirm or confirm.error then
+            if confirm and confirm.code == 'unsupported_injuries' then
+                MedicalUI.show({
+                    title = '診察 — ID ' .. target, targetId = target, success = success,
+                    injuries = injuries, death = auth.death, mode = 'unsupported',
+                    refresh = function() startDiagnosis(target) end,
+                })
+            end
             notify(confirm and confirm.error or '診察情報を確認できません'); return
         end
         if Config.Debug then
@@ -102,7 +168,7 @@ local function startDiagnosis(target)
         local ped = PlayerPedId()
         examination.ped = ped
         examination.progressing = true
-        SendNUIMessage({ action = 'exam-progress', duration = confirm.duration })
+        examination.progress = MedicalProgress.start(confirm.duration, Config.Examination.Label or '診察しています')
         local deadline = GetGameTimer() + confirm.duration
         local animation = Config.Examination.Animation
         local prop = Config.Examination.Prop
@@ -149,13 +215,15 @@ local function startDiagnosis(target)
 
         local snapshot = {
             title = '診察 — ID ' .. target, targetId = target, success = success,
-            death = confirm.death, injuries = injuries, observedInjuries = confirm.injuries,
+            death = confirm.death, injuries = injuries, report = confirm.report, fractures = confirm.fractures,
             refresh = function() startDiagnosis(target) end,
         }
         -- 保存前の患者・距離確認と、患者側の表示解除はサーバーが行う。
         local chart = lib.callback.await('ptech_mediora_medical:createChart', false, target)
         if activeExamination ~= examination then return end
         if chart and chart.chart then
+            if chart.capturePhoto then pcall(captureChartPhoto, examination, target, chart.chart.chartId) end
+            if activeExamination ~= examination then return end
             if GetResourceState('ptech_mediora_manager') == 'started' then
                 local shown, opened = pcall(function()
                     return exports.ptech_mediora_manager:openCharts(target, chart.chart.chartId)
@@ -209,13 +277,16 @@ local function handleCommand(_, args)
         notify('IDには対象プレイヤーの数字のサーバーIDを指定してください')
         return
     end
-    startDiagnosis(tonumber(args[2]))
+    local target = tonumber(args[2])
+    if not Medical.validId(target) then
+        notify('有効なプレイヤーIDを指定してください')
+        return
+    end
+    startDiagnosis(target)
 end
 
 RegisterCommand(Config.Commands.Name, handleCommand, false)
 
--- 仮アイテムは廃止。Logiのアイテムを取り込むまでは空のカタログを返す。
--- EMSManagerの一覧取得口は残すが、Logiへの依存・自動取り込みはまだ追加しない。
 exports('getTreatmentItems', function()
     return {}
 end)
@@ -247,8 +318,11 @@ end
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
     cancelActiveExamination()
+    if MedicalTreatment then MedicalTreatment.cancel() end
     if Config.Target.Enabled then
         exports.ox_target:removeGlobalPlayer('ptech_mediora_medical:diagnose')
     end
 end)
 
+
+MedicalTreatment.canStart = function() return not activeExamination end

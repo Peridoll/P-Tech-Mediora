@@ -5,20 +5,53 @@
 #tablet button { font: inherit; cursor: pointer; border: 0; }
 #tablet button:focus-visible { outline: 2px solid #69d8c0; outline-offset: -2px; }
 #tablet button:disabled { opacity: .5; cursor: wait; }
-.tablet-sidebar { width: 220px; flex-shrink: 0; padding: 30px 16px 18px; display: flex; flex-direction: column; color: #d7e5e8; background: #142e36; }
-.tablet-brand { display: flex; align-items: baseline; gap: 3px; padding: 0 10px; white-space: nowrap; color: #f4faf9; }
-.tablet-brand b { font-size: 48px; line-height: 1; color: #6cddc4; font-weight: 800; }
-.tablet-brand span { font-size: 19px; letter-spacing: 2px; font-weight: 700; }
+.tablet-rail { position: relative; flex: 0 0 60px; z-index: 1; }
+.tablet-sidebar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 100%;
+    overflow: hidden;
+    padding: 30px 8px 18px;
+    display: flex;
+    flex-direction: column;
+    color: #d7e5e8;
+    background: #142e36;
+    transition: width .2s ease, box-shadow .2s ease;
+}
+.tablet-sidebar:hover { width: 220px; box-shadow: 8px 0 20px #091e3152; }
+.tablet-brand { display: flex; align-items: baseline; gap: 3px; padding: 0 5px; white-space: nowrap; color: #f4faf9; }
+.tablet-brand b { font-size: 40px; line-height: 1; color: #6cddc4; font-weight: 800; }
+.tablet-brand span { font-size: 16px; letter-spacing: 2px; font-weight: 700; }
 .tablet-navigation { display: grid; gap: 6px; margin-top: 36px; }
-.tablet-sidebar button { width: 100%; text-align: left; padding: 14px 12px; border-radius: 8px; background: transparent; color: #a9bfc5; display: flex; align-items: center; gap: 10px; }
+.tablet-sidebar button { width: 100%; min-width: 0; padding: 11px 10px; border-radius: 8px; background: transparent; color: #a9bfc5; display: flex; align-items: center; gap: 10px; overflow: hidden; text-align: left; white-space: nowrap; }
+.tablet-sidebar button i { flex: 0 0 24px; font: normal 19px/1.2 'Segoe UI Symbol', sans-serif; text-align: center; }
 .tablet-sidebar button:hover { background: #203e47; color: #e8f7f3; }
 .tablet-sidebar button.selected { background: #294850; color: #8aebd4; }
 .tablet-sidebar-bottom { margin-top: auto; display: grid; gap: 8px; padding-top: 20px; }
 #tablet-admin-link { border-top: 1px solid #34515a; border-radius: 0; font-size: 12px; }
 #tablet-admin-link small { margin-left: auto; font-size: 8px; letter-spacing: 1px; color: #6cddc4; }
+.tablet-sidebar :is(.tablet-brand span, button span, button small) { opacity: 0; transition: opacity .15s ease; }
+.tablet-sidebar:hover :is(.tablet-brand span, button span, button small) { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+    .tablet-sidebar, .tablet-sidebar :is(.tablet-brand span, button span, button small) { transition: none; }
+}
 .tablet-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .tablet-page { flex: 1; min-height: 0; padding: 30px; overflow-y: auto; }
 #tablet-home { padding: 0; }
+.tablet-progress-settings { display: grid; gap: 12px; margin-top: 22px; max-width: 330px; }
+#tablet-progress-theme { font: inherit; padding: 10px 12px; border: 1px solid #a9c0bc; border-radius: 7px; background: #fff; color: #233e47; }
+.tablet-progress-preview { padding: 14px 16px; border-radius: 8px; color: #e6f2f2; background: #142e36; }
+.tablet-chart-search { display: grid; gap: 8px; margin: 24px 0 14px; }
+.tablet-chart-search > div { display: flex; gap: 8px; }
+#tablet-chart-patient-id, #tablet-chart-history { font: inherit; color: #233e47; border: 1px solid #a9c0bc; border-radius: 7px; background: #fff; padding: 10px 12px; }
+#tablet-chart-patient-id { width: min(180px, 60%); }
+#tablet-chart-submit { padding: 10px 18px; border-radius: 7px; color: #fff; background: #216b5d; }
+#tablet-chart-status { font-size: 12px; color: #527078; }
+#tablet-chart-results h2 { font-size: 18px; overflow-wrap: anywhere; }
+#tablet-chart-history { display: block; width: 100%; margin: 8px 0 16px; }
+.tablet-chart-record { padding: 14px 18px; border: 1px solid #dce5e3; border-radius: 8px; background: #fff; overflow-wrap: anywhere; }
+.tablet-chart-record h3 { margin: 0; font-size: 14px; }
+#tablet-chart-injuries { margin: 0; padding-left: 18px; line-height: 1.8; }
 #tablet h1 { font-size: 24px; margin: 0 0 8px; }
 .tablet-muted { font-size: 12px; color: #789097; }
 .tablet-page-heading { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
@@ -56,7 +89,7 @@
 @media (prefers-reduced-motion: reduce) { #tablet-resource-status[data-phase="pending"]::before { animation: none; } }
 @media (max-width: 1000px) { #tablet-resource-list li { flex-wrap: wrap; } .tablet-resource-controls { width: 100%; } }
 #tablet-status { margin: 12px 24px; color: #a03f3f; font-size: 12px; }
-@media (max-width: 850px) { .tablet-sidebar { width: 180px; padding-inline: 10px; } .tablet-brand b { font-size: 40px; } .tablet-brand span { font-size: 16px; } .tablet-page { padding: 22px; } }
+@media (max-width: 850px) { .tablet-page { padding: 22px; } }
 
 /* Medicalと同じ本体比率・右側の物理ホームボタン。 */
 #tablet { padding: 28px; background: rgba(3,10,15,.48); }
@@ -78,3 +111,80 @@
     #tablet-home-button { width: 18px; height: 18px; }
     #tablet-shutter { inset: 12px calc(var(--tablet-side) + 6px) 12px 8px; }
 }
+
+#tablet-shop .shop-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, .9fr);
+    gap: .85rem;
+    margin: 1rem 0;
+    align-items: start;
+}
+#tablet-shop .shop-catalog, #tablet-shop .shop-cart {
+    min-width: 0;
+    padding: .75rem;
+    border: 1px solid #365360;
+    border-radius: .65rem;
+    background: #122731;
+}
+#tablet-shop .shop-layout h2 { margin: 0 0 .65rem; font-size: 1rem; }
+#tablet-shop p { margin: 0; }
+#tablet-shop .shop-items, #tablet-shop-cart { display: grid; gap: .4rem; }
+#tablet-shop-cart { list-style: none; padding: 0; margin: 0; }
+#tablet-shop .shop-items article, #tablet-shop-cart li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: .45rem;
+    padding: .45rem;
+    border-radius: .4rem;
+    background: #19323d;
+}
+#tablet-shop .shop-items article[draggable="true"] { cursor: grab; }
+#tablet-shop .shop-items img { width: 2.4rem; height: 2.4rem; object-fit: contain; }
+#tablet-shop .shop-items article {
+    grid-template-columns: 2.8rem minmax(0, 1fr) auto;
+    gap: .6rem;
+    padding: .6rem;
+    color: #e8f3f5;
+}
+#tablet-shop .shop-item-detail { min-width: 0; display: grid; gap: .24rem; }
+#tablet-shop .shop-item-detail strong, #tablet-shop .shop-item-detail p { overflow-wrap: anywhere; }
+#tablet-shop .shop-items article p { font-size: .78rem; color: #bfd2d9; }
+#tablet-shop .shop-treatment {
+    justify-self: start;
+    padding: .12rem .42rem;
+    border-radius: .3rem;
+    background: #254955;
+    color: #dcf4f2;
+    font-size: .72rem;
+}
+#tablet-shop .shop-item-purchase { display: grid; justify-items: end; gap: .2rem; white-space: nowrap; }
+#tablet-shop .shop-owned { color: #bfd2d9; font-size: .75rem; }
+#tablet-shop .shop-item-purchase button { min-width: 1.65rem; border-radius: .3rem; background: #dceae8; color: #163741; }
+#tablet-shop-cart li {
+    grid-template-columns: 2.4rem minmax(0, 1fr) auto;
+    align-items: start;
+    color: #e8f3f5;
+}
+#tablet-shop-cart img { width: 2.4rem; height: 2.4rem; object-fit: contain; }
+#tablet-shop-cart .shop-cart-detail, #tablet-shop-cart .shop-cart-actions { display: grid; gap: .3rem; min-width: 0; }
+#tablet-shop-cart .shop-cart-detail strong { overflow-wrap: anywhere; }
+#tablet-shop-cart .shop-cart-detail span, #tablet-shop-cart label { color: #bfd2d9; font-size: .78rem; }
+#tablet-shop-cart label { display: flex; align-items: center; flex-wrap: wrap; gap: .25rem; }
+#tablet-shop-cart input { width: 3.6rem; max-width: 100%; }
+#tablet-shop-cart .shop-cart-actions { justify-items: end; white-space: nowrap; }
+#tablet-shop-cart .shop-cart-actions button { min-width: 1.55rem; border-radius: .3rem; background: #dceae8; color: #163741; }
+#tablet-shop .shop-cart.shop-drag-over { border-color: var(--progress-color, #55d4bc); background: #1c3740; }
+#tablet-shop .shop-empty { padding: 1.4rem .35rem; text-align: center; border: 1px dashed #50717e; border-radius: .4rem; }
+#tablet-shop .shop-checkout {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: .55rem;
+    margin-top: .8rem;
+}
+#tablet-shop .shop-checkout button { border-color: var(--progress-color, #55d4bc); }
+#tablet-shop-orders li { padding: .7rem; border: 1px solid #365360; border-radius: .55rem; background: #122731; }
+@media (max-width: 740px) { #tablet-shop .shop-layout { grid-template-columns: minmax(0, 1fr); } }
+#tablet-shop-orders { display: grid; gap: .45rem; padding: 0; list-style: none; }

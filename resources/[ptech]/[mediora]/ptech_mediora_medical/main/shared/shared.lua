@@ -31,30 +31,45 @@ function Medical.report(injuries, success)
             rows[#rows + 1] = { part = part, kind = injury.type, severity = level(data.level), bleed = level(data.bleed) }
         end
     end
-    if type(injuries.injury) == 'string' and kinds[injuries.injury] then
-        local part
-        for _, known in ipairs(parts) do
-            if injuries.location == known then part = known; break end
-        end
-        local duplicate = false
-        for _, row in ipairs(rows) do
-            if row.kind == injuries.injury and (not part or row.part == part) then
-                duplicate = true
-                break
-            end
-        end
-        if not duplicate then
-            rows[#rows + 1] = {
-                part = part, kind = injuries.injury,
-                body = not part and injuries.injury ~= 'beat' and '上半身（仮）' or nil,
-                severity = part == 'head' and 3 or level(injuries.level) or 1,
-                cause = true,
-            }
+    return { rows = rows, status = next(injuries) == nil and '返却情報なし（健康の保証ではありません）'
+        or #rows == 0 and '未対応形式' or 'クライアント観察記録' }
+end
+
+-- 骨折はWasabiの傷を置き換えず、追加症状として別に保持する。
+Medical.fractureParts = { 'lower_body', 'left_leg', 'right_leg' }
+
+function Medical.deriveFractures(rows)
+    local fractures = {}
+    local allowed = {}
+    for _, part in ipairs(Medical.fractureParts) do allowed[part] = true end
+    for _, row in ipairs(rows) do
+        if allowed[row.part] and row.kind == 'beat' and type(row.severity) == 'number'
+            and row.severity >= Config.Fracture.Severity then
+            fractures[row.part] = row.severity
         end
     end
-    local unsupported = next(injuries) ~= nil and #rows == 0
-    return { rows = rows, unsupported = unsupported, status = next(injuries) == nil and '返却情報なし（健康の保証ではありません）'
-        or unsupported and '負傷情報は未取得（未対応の返却形式）' or 'クライアント観察記録' }
+    return fractures
+end
+
+function Medical.withFractures(report, fractures)
+    local rows = {}
+    for _, row in ipairs(report.rows) do
+        rows[#rows + 1] = { part = row.part, kind = row.kind, severity = row.severity, bleed = row.bleed }
+    end
+    for _, part in ipairs(Medical.fractureParts) do
+        local severity = fractures and fractures[part]
+        if severity then rows[#rows + 1] = { part = part, kind = 'fracture', severity = severity, bleed = 0 } end
+    end
+    return { rows = rows, status = report.status }
+end
+
+-- 同じ部位に打撲と骨折があっても、診察時間は1部位分だけ加算する。
+function Medical.partCount(rows)
+    local seen, count = {}, 0
+    for _, row in ipairs(rows) do
+        if not seen[row.part] then seen[row.part], count = true, count + 1 end
+    end
+    return count
 end
 
 function Medical.jobAllowed(name)

@@ -82,10 +82,10 @@ end
   【  】
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
-local function isNear(source, point)
+local function isNear(source, point, distance)
   local ped = GetPlayerPed(source)
   if ped == 0 then return false end
-  return #(GetEntityCoords(ped) - point.coords) <= Config.Procurement.interactDistance + 1.0
+  return #(GetEntityCoords(ped) - point.coords) <= (distance or Config.Procurement.interactDistance) + 1.0
 end
 
 
@@ -484,33 +484,52 @@ end
   【  】
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
-RegisterNetEvent('ptech_mediora_logistics:server:collect',
-  function(pointId)
-    local source = source
-    local point = pointById[pointId]
-    if not point or not isAllowed(source) or not isNear(source, point) then return end
+-- クールタイムはプレイヤー単位かつ収集地点単位で永続保存する。
+local function collectionCooldownKey(source, pointId)
+  return ('cooldown:%s:%s'):format(playerKey(source), pointId)
+end
 
-    -- クールタイムはプレイヤー単位かつ収集地点単位で永続保存する。
-    local cooldownKey = ('cooldown:%s:%s'):format(playerKey(source), point.id)
-    local now = os.time()
-    local expiresAt = GetResourceKvpInt(cooldownKey)
-    if expiresAt > now then
-      notify(source, Config.Text.cooldown)
-      return
-    end
-
-    local hospital = Config.Hospitals[math.random(#Config.Hospitals)]
-    local grade = tonumber(point.grade) or 1
-    local success, serial = addBox(source, hospital, rollContents(grade), 'regular', nil, nil, grade)
-    if not success then
-      notify(source, Config.Text.collectionFailed)
-      return
-    end
-
-    SetResourceKvpInt(cooldownKey, now + Config.Procurement.cooldownSeconds)
-    notify(source, ('段ボール #%s を調達しました。納品先: %s'):format(serial, hospital.label))
+lib.callback.register('ptech_mediora_logistics:server:getCollectionCooldown', function(source, pointId)
+  local point = pointById[pointId]
+  if not point or not isAllowed(source) then return 0 end
+  local distance = Config.Procurement.interactDistance
+  if point.prop then
+    distance = math.max(distance, Config.Procurement.propDisplayDistance or 10.0)
   end
-)
+  if not isNear(source, point, distance) then return 0 end
+  return math.max(0, GetResourceKvpInt(collectionCooldownKey(source, point.id)) - os.time())
+end)
+
+local function collectSupplies(source, pointId)
+  local point = pointById[pointId]
+  if not point or not isAllowed(source) or not isNear(source, point) then return 0 end
+
+  local cooldownKey = collectionCooldownKey(source, point.id)
+  local now = os.time()
+  local remaining = GetResourceKvpInt(cooldownKey) - now
+  if remaining > 0 then
+    notify(source, Config.Text.cooldown)
+    return remaining
+  end
+
+  local hospital = Config.Hospitals[math.random(#Config.Hospitals)]
+  local grade = tonumber(point.grade) or 1
+  local success, serial = addBox(source, hospital, rollContents(grade), 'regular', nil, nil, grade)
+  if not success then
+    notify(source, Config.Text.collectionFailed)
+    return 0
+  end
+
+  local cooldown = Config.Procurement.cooldownSeconds
+  SetResourceKvpInt(cooldownKey, now + cooldown)
+  notify(source, ('段ボール #%s を調達しました。納品先: %s'):format(serial, hospital.label))
+  return cooldown
+end
+
+lib.callback.register('ptech_mediora_logistics:server:collect', collectSupplies)
+RegisterNetEvent('ptech_mediora_logistics:server:collect', function(pointId)
+  collectSupplies(source, pointId)
+end)
 
 
 

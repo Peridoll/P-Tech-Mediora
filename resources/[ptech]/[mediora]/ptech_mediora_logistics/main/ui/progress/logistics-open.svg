@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 76 62" aria-hidden="true"
+     fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+  <style>
+    svg { color: var(--mediora-progress-accent, #62dfff); }
+    .lift { animation: lift 3.64s ease-in-out infinite; }
+    .body { animation: stretch 3.64s ease-in-out infinite; transform-origin: 38px 44px; }
+    .hands { animation: reach 3.64s ease-in-out infinite; }
+    .grip { animation: grip 3.64s ease-in-out infinite; }
+    .eyes { animation: blink 3.64s linear infinite; transform-origin: 38px 43px; }
+
+    @keyframes lift {
+      0%, 22.8%, 80%, 100% { transform: translateY(0); }
+      44%, 62.6% { transform: translateY(-21px); }
+    }
+    @keyframes stretch {
+      0%, 22.8%, 80%, 100% { transform: scaleY(.04); }
+      44%, 62.6% { transform: scaleY(1); }
+    }
+    @keyframes reach {
+      0%, 1.9%, 93.1%, 100% { transform: translateY(-55px); }
+      20.9%, 81.3% { transform: translateY(0); }
+    }
+    @keyframes grip {
+      0%, 16.8%, 83.2%, 100% { transform: translateX(3px); }
+      22.3%, 79.1% { transform: translateX(0); }
+    }
+    @keyframes blink {
+      0%, 50.5%, 55.2%, 100% { transform: scaleY(1); }
+      51.9%, 53.6% { transform: scaleY(.25); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .lift, .body, .hands, .grip, .eyes { animation: none; }
+      .lift { transform: translateY(-21px); }
+    }
+  </style>
+  <defs>
+    <clipPath id="box-opening"><path d="M0 0h76v44H0z"/></clipPath>
+    <g id="hand">
+      <path d="M9-33l7 2-3 15-4 7-4 2-3-4 5-6z" fill="#18313b"/>
+      <path d="m2.8-11.2 6 2.3"/>
+      <path d="m3.8-10 4.5 2-1.6 4-1.4 4.4-2.2 2.5-2.8.4-3.7-1.3-.3-1.2
+               2.4-1.2 2.6-.1-1-2.3.7-1.3 1.7 1 .7-1.9z" fill="#39716d" stroke-width="1.05"/>
+    </g>
+  </defs>
+  <rect x="18" y="42" width="40" height="8" rx="3" fill="#0b1821"/>
+  <path d="m17 42-16-9.5V37l16 9.5z M59 42l16-9.5V37l-16 9.5z" fill="#142a35"/>
+  <g clip-path="url(#box-opening)">
+    <path class="body" d="M29 23h18v25H29z" fill="#214449" vector-effect="non-scaling-stroke"/>
+    <g class="lift">
+      <path d="M26 43V33l6 5h12l6-5v10l-2 4-4 2H32l-4-2z" fill="#214449"/>
+      <g class="eyes" fill="currentColor" stroke="none">
+        <circle cx="33" cy="43" r="1.15"/>
+        <circle cx="43" cy="43" r="1.15"/>
+      </g>
+      <path d="M37 45.5h2l-1 1.1z" fill="currentColor" stroke="none"/>
+      <path d="m27 46-2 3v3m24-6 2 3v3" stroke-width="3.9"/>
+      <path d="m27 46-2 3v3m24-6 2 3v3" stroke="#214449" stroke-width="2.55"/>
+    </g>
+  </g>
+  <rect x="18" y="44" width="40" height="13" rx="3" fill="#142a35"/>
+  <path d="M34 51h8"/>
+  <g class="lift">
+    <g class="hands">
+      <g transform="translate(28.5 47.3) scale(-1 1)"><use class="grip" href="#hand"/></g>
+      <g transform="translate(47.5 47.3)"><use class="grip" href="#hand"/></g>
+    </g>
+  </g>
+</svg>

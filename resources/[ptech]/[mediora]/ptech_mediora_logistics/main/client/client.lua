@@ -16,52 +16,129 @@ end
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 local logisticsProgress
-local progressUiReady = false
+local collectionProps = {}
+local propDisplayDistance = Config.Procurement.propDisplayDistance or 10.0
 
-RegisterNUICallback('progressReady', function(_, cb)
-  progressUiReady = true
-  cb({ ok = true })
+local function removeCollectionProp(entry)
+  if entry.entity then
+    DeleteEntity(entry.entity)
+    entry.entity = nil
+  end
+  if entry.requested then
+    SetModelAsNoLongerNeeded(entry.model)
+    entry.requested = nil
+  end
+end
+
+CreateThread(function()
+  for _, point in ipairs(Config.CollectPoints) do
+    local prop = point.prop
+    if prop then
+      local model = type(prop.model) == 'string' and joaat(prop.model) or prop.model
+      if type(model) == 'number' and IsModelInCdimage(model) and IsModelValid(model)
+          and not IsModelAPed(model) and not IsModelAVehicle(model) then
+        collectionProps[point.id] = {
+          model = model,
+          coords = point.coords + (prop.offset or vector3(0.0, 0.0, 0.0)),
+          pointCoords = point.coords,
+          heading = prop.heading or 0.0,
+        }
+      else
+        print(('[mediora logistics] Invalid prop model at %s: %s'):format(point.id, tostring(prop.model)))
+      end
+    end
+  end
+  if not next(collectionProps) then return end
+
+  while true do
+    local coords = GetEntityCoords(PlayerPedId())
+    local allowed = isAllowed()
+    for pointId, entry in pairs(collectionProps) do
+      if allowed and #(coords - entry.pointCoords) <= propDisplayDistance then
+        if not entry.readyAt then
+          local remaining = lib.callback.await('ptech_mediora_logistics:server:getCollectionCooldown', false, pointId) or 0
+          entry.readyAt = math.max(entry.readyAt or 0, GetGameTimer() + remaining * 1000)
+        elseif entry.readyAt > GetGameTimer() then
+          removeCollectionProp(entry)
+        elseif not entry.entity or not DoesEntityExist(entry.entity) then
+          if HasModelLoaded(entry.model) then
+            local pos = entry.coords
+            local entity = CreateObjectNoOffset(entry.model, pos.x, pos.y, pos.z, false, false, false)
+            if entity ~= 0 then
+              SetEntityHeading(entity, entry.heading)
+              FreezeEntityPosition(entity, true)
+              SetEntityCollision(entity, false, false)
+              entry.entity = entity
+            end
+            SetModelAsNoLongerNeeded(entry.model)
+            entry.requested = nil
+          else
+            RequestModel(entry.model)
+            entry.requested = true
+          end
+        end
+      else
+        removeCollectionProp(entry)
+        entry.readyAt = nil
+      end
+    end
+    Wait(250)
+  end
 end)
+local collectionPanelId = 'mediora-logistics-cooldown'
+local displayedCooldownMinutes
+
+local function updateCollectionPanel(minutes)
+  if minutes == displayedCooldownMinutes then return end
+  if minutes then
+    local ok, accepted = pcall(function()
+      return exports.ptech_mediora_core:setActionPanel({
+        id = collectionPanelId,
+        title = '物資回収',
+        icon = '▦',
+        state = 'cooldown',
+        text = ('再度物資回収まで、あと%d分'):format(minutes),
+      })
+    end)
+    if not ok or not accepted then return end
+  else
+    pcall(function() exports.ptech_mediora_core:removeActionPanel(collectionPanelId) end)
+  end
+  displayedCooldownMinutes = minutes
+end
+
+local function hideLogisticsProgress(operation)
+  pcall(function() exports.ptech_mediora_core:hideProgress(operation.progressId) end)
+end
 
 local function runLogisticsProgress(options)
   if logisticsProgress then return false end
   local ped = PlayerPedId()
   if IsEntityDead(ped) or IsPedInAnyVehicle(ped, false) then return false end
-  local animation = options.anim
-  local operation = { ped = ped, animation = animation }
-  logisticsProgress = operation
-  local readyDeadline = GetGameTimer() + 5000
-  while not progressUiReady and GetGameTimer() < readyDeadline do
-    Wait(50)
-  end
-  if not progressUiReady then
-    logisticsProgress = nil
-    local resource = GetCurrentResourceName()
-    local uiPage = GetResourceMetadata(resource, 'ui_page', 0)
-    local uiFile = uiPage and LoadResourceFile(resource, uiPage)
-    local detail
-    if not uiPage then
-      detail = '実行中の fxmanifest.lua に ui_page がありません。fxmanifest.lua も更新してください。'
-    elseif not uiFile then
-      detail = ('画面ファイル %s が配信されていません。main/ui/index.html と fxmanifest.lua を更新してください。'):format(uiPage)
-    else
-      detail = '画面ファイルは存在しますが応答がありません。F8 の [mediora logistics] と NUI エラーを確認してください。'
-    end
-    print(('[mediora logistics] resource=%s ui_page=%s htmlBytes=%s ready=%s'):format(
-      resource, tostring(uiPage), uiFile and #uiFile or 0, tostring(progressUiReady)))
-    print('[mediora logistics] ' .. detail)
-    lib.notify({ description = detail, type = 'error', duration = 12000 })
+  local templates = Config.ProgressAnimations or {}
+  local ok, shown, progressId = pcall(function()
+    return exports.ptech_mediora_core:showProgress({
+      duration = options.duration,
+      style = Config.ProgressBarStyle,
+      template = templates[options.progressAnimation or 'logistics'],
+      label = options.label or '物資を回収中',
+    })
+  end)
+  if not ok or not shown or not progressId then
+    lib.notify({ description = 'Coreのプログレスバーを表示できません。少し待ってから再試行してください。', type = 'error' })
     return false
   end
+
+  local animation = options.anim
+  local operation = { ped = ped, animation = animation, progressId = progressId }
+  logisticsProgress = operation
   RequestAnimDict(animation.dict)
-  SendNUIMessage({ action = 'logistics-progress', duration = options.duration, label = options.label })
   local deadline = GetGameTimer() + options.duration
   local finished = false
   while logisticsProgress == operation and PlayerPedId() == ped and not IsEntityDead(ped) and isAllowed() do
     DisableAllControlActions(0)
     EnableControlAction(0, 1, true)
     EnableControlAction(0, 2, true)
-    if IsDisabledControlJustPressed(0, 73) or IsDisabledControlJustPressed(0, 177) then break end
     if GetGameTimer() >= deadline then
       finished = true
       break
@@ -74,18 +151,21 @@ local function runLogisticsProgress(options)
   end
   StopAnimTask(ped, animation.dict, animation.clip, 1.0)
   RemoveAnimDict(animation.dict)
-  SendNUIMessage({ action = 'logistics-progress' })
+  hideLogisticsProgress(operation)
   logisticsProgress = nil
   return finished
 end
 
 AddEventHandler('onResourceStop', function(resource)
-  if resource ~= GetCurrentResourceName() or not logisticsProgress then return end
+  if resource ~= GetCurrentResourceName() then return end
+  updateCollectionPanel(nil)
+  for _, entry in pairs(collectionProps) do removeCollectionProp(entry) end
+  if not logisticsProgress then return end
   local operation = logisticsProgress
   logisticsProgress = nil
   StopAnimTask(operation.ped, operation.animation.dict, operation.animation.clip, 1.0)
   RemoveAnimDict(operation.animation.dict)
-  SendNUIMessage({ action = 'logistics-progress' })
+  hideLogisticsProgress(operation)
 end)
 
 local function showHelp(text)
@@ -453,6 +533,38 @@ end -- requestCraftItem
   |   レシピに応じて医療道具を作成する
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
+local function openOrderPickup(hospital)
+  local result = lib.callback.await('ptech_mediora_logistics:orders:pickupList', false)
+  if not result or not result.ok then
+    notify(result and result.error or '注文を確認できませんでした。', 'error')
+    return
+  end
+  local options = {}
+  for _, order in ipairs(result.orders) do
+    if order.status == 'waiting' or order.status == 'handed_over' then
+      local labels = {}
+      for _, item in ipairs(order.items) do labels[#labels + 1] = ('%s × %d'):format(item.label, item.count) end
+      options[#options + 1] = {
+        title = ('注文 #%d'):format(order.id),
+        description = table.concat(labels, '、'),
+        icon = 'box-open',
+        onSelect = function()
+          local pickup = lib.callback.await('ptech_mediora_logistics:orders:pickup', false, order.id)
+          if not pickup or not pickup.ok then
+            notify(pickup and pickup.error or '受け取りを開始できませんでした。', 'error')
+            return
+          end
+          exports.ox_inventory:openInventory('stash', { id = pickup.stash, owner = pickup.owner })
+        end,
+      }
+    end
+  end
+  if #options == 0 then notify('受け取れる注文はありません。'); return end
+  lib.registerContext({ id = 'mediora-order-pickup', title = hospital.label .. ' · 注文受取', options = options })
+  lib.showContext('mediora-order-pickup')
+end
+
+
 local function openHospitalMenu(hospital)
 
   -- 病院メニューのコンテキストIDを生成
@@ -487,6 +599,15 @@ local function openHospitalMenu(hospital)
       description = Config.Text.menuCraftToolsDesc,
       icon        = 'screwdriver-wrench',
       onSelect    = function() requestCraftItem(hospital) end,
+    }
+  end
+
+  if hospital.id == 'pillbox' then
+    options[#options + 1] = {
+      title = '注文品を受け取る',
+      description = 'タブレットで購入した物資の受け取り',
+      icon = 'box-open',
+      onSelect = function() openOrderPickup(hospital) end,
     }
   end
 
@@ -533,6 +654,8 @@ CreateThread(
     -- 多数の収集地点を毎フレーム総当たりしないため、近傍の探索結果を一定時間キャッシュする。
     local nextScanAt = 0
     local cachedCollectPoint, cachedHospital
+    local nearbyCollectionId
+    local collectionReadyAt = 0
 
     while ( true ) do -- メインループ、スレッド内の処理を繰り返す
 
@@ -570,32 +693,47 @@ CreateThread(
       -- 最寄りの収集ポイントを探索
       local collectPoint = cachedCollectPoint
       local pointDistance = collectPoint and #(playerCoords - collectPoint.coords)
+      local nearbyId = pointDistance and pointDistance <= interactDistance and collectPoint.id or nil
+      if nearbyId ~= nearbyCollectionId then
+        nearbyCollectionId = nearbyId
+        local remaining = nearbyId
+          and lib.callback.await('ptech_mediora_logistics:server:getCollectionCooldown', false, nearbyId) or 0
+        collectionReadyAt = GetGameTimer() + remaining * 1000
+      end
+      local remainingMs = collectionReadyAt - GetGameTimer()
+      local onCooldown = nearbyId ~= nil and remainingMs > 0
+      updateCollectionPanel(onCooldown and math.ceil(remainingMs / 60000) or nil)
 
       if ( collectPoint and pointDistance <= markerDistance ) then -- 探索した収集ポイントがまだ描画範囲内にある場合
 
         waitTime = 0 -- プレイヤーが収集ポイントに近いため、待機時間を短縮
 
-        DrawMarker( -- 収集ポイントのマーカーを描画
-          Config.Procurement.markerType,
-          collectPoint.coords.x,
-          collectPoint.coords.y,
-          collectPoint.coords.z - 0.9,
-          0.0, 0.0, 0.0,
-          0.0, 0.0, 0.0,
-          Config.Procurement.markerScale.x,
-          Config.Procurement.markerScale.y,
-          Config.Procurement.markerScale.z,
-          35, 145, 210, 150,
-          false,
-          true,
-          2,
-          false,
-          nil, nil,
-          false
-        )
+        local prop = collectionProps[collectPoint.id]
+        local waitingForProp = prop and prop.readyAt and prop.readyAt <= GetGameTimer()
+          and pointDistance <= propDisplayDistance and (not prop.entity or not DoesEntityExist(prop.entity))
+        if not prop or (not onCooldown and waitingForProp) then
+          DrawMarker( -- 収集ポイントのマーカーを描画
+            Config.Procurement.markerType,
+            collectPoint.coords.x,
+            collectPoint.coords.y,
+            collectPoint.coords.z - 0.9,
+            0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0,
+            Config.Procurement.markerScale.x,
+            Config.Procurement.markerScale.y,
+            Config.Procurement.markerScale.z,
+            35, 145, 210, 150,
+            false,
+            true,
+            2,
+            false,
+            nil, nil,
+            false
+          )
+        end
 
         -- プレイヤーが収集ポイントにいるとき、操作方法を表示し、収集イベントをトリガーする
-        if pointDistance <= interactDistance then -- プレイヤーがEキー操作可能な距離にいる場合
+        if nearbyId and not onCooldown then
 
           showHelp(Config.Text.collect .. ' [E]') -- 回収地点の操作方法を表示
 
@@ -605,7 +743,6 @@ CreateThread(
               duration = Config.Procurement.collectDurationMs or 5000,
               label = '物資を回収中...',
               position = 'bottom',
-              canCancel = true,
               useWhileDead = false,
               disable = { move = true, car = true, combat = true },
               anim = {
@@ -616,7 +753,15 @@ CreateThread(
             })
 
             if completed and isAllowed() then
-              TriggerServerEvent('ptech_mediora_logistics:server:collect', collectPoint.id)
+              local remaining = lib.callback.await('ptech_mediora_logistics:server:collect', false, collectPoint.id) or 0
+              collectionReadyAt = GetGameTimer() + remaining * 1000
+              if remaining > 0 then
+                if prop then
+                  prop.readyAt = collectionReadyAt
+                  removeCollectionProp(prop)
+                end
+                updateCollectionPanel(math.ceil(remaining / 60))
+              end
             elseif not completed then
               notify('回収を中止しました。', 'inform')
             end
@@ -719,8 +864,8 @@ RegisterNetEvent('ptech_mediora_logistics:client:showBoxMenu', function(slot, de
           local completed = runLogisticsProgress({
             duration = Config.Procurement.boxOpenDurationMs,
             label = Config.Text.boxOpening,
+            progressAnimation = 'boxOpening',
             position = 'bottom',
-            canCancel = true,
             useWhileDead = false,
             disable = { move = true, car = true, combat = true },
             anim = {

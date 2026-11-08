@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 44" style="color:var(--mediora-progress-accent, #79dfce)" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M10 32h36" opacity=".35"/>
+  <g class="motion"><path d="M17 10 28 24 39 10M22 9l6 15 6-15"/>
+  <circle cx="28" cy="27" r="2.7" fill="currentColor"/></g>
+  <style>
+    .motion { animation: treatment-motion 1.5s ease-in-out infinite; }
+    @keyframes treatment-motion { 0%,100% { transform:translateY(4px); } 58%,75% { transform:translateY(-4px); } }
+    @media (prefers-reduced-motion: reduce) { .motion { animation: none; } }
+  </style>
+</svg>

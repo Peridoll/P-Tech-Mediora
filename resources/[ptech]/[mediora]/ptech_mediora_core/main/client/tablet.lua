@@ -1,10 +1,20 @@
 local opened = false
 local ready = false
-local loading = false
 local generation = 0
 local usingItem = false
+local resourceName = GetCurrentResourceName()
+local version = GetResourceMetadata(resourceName, 'version', 0) or 'unknown'
+local tabletItem = Config and Config.Tablet and Config.Tablet.item
+if not tabletItem then
+    tabletItem = 'pmediora_tablet'
+    print(('[%s] Tablet %s: Config.Tablet.item unavailable; using %s'):format(resourceName, version, tabletItem))
+end
+local progressThemes = { mediora = true, blue = true, amber = true, violet = true, peach = true, lime = true }
+local progressTheme = GetResourceKvpString('progressTheme')
+if not progressThemes[progressTheme] then progressTheme = 'mediora' end
 
 local function closeTablet()
+    if not opened then return end
     opened = false
     generation = generation + 1
     SetNuiFocus(false, false)
@@ -17,7 +27,7 @@ local function openTablet()
         return false
     end
     if IsPauseMenuActive() then return false end
-    if (exports.ox_inventory:Search('count', Config.Tablet.item) or 0) < 1 then
+    if (exports.ox_inventory:Search('count', tabletItem) or 0) < 1 then
         lib.notify({ type = 'error', description = 'Medioraタブレットを所持していません。' })
         return false
     end
@@ -34,7 +44,7 @@ exports('useTablet', function(data)
         lib.notify({ type = 'error', description = '現在タブレットを開けません。少し待ってもう一度使用してください。' })
         return
     end
-    if type(data) ~= 'table' or data.name ~= Config.Tablet.item then
+    if type(data) ~= 'table' or data.name ~= tabletItem then
         lib.notify({ type = 'error', description = 'タブレットのアイテム名とCoreの設定が一致していません。' })
         return
     end
@@ -55,13 +65,26 @@ exports('useTablet', function(data)
 end)
 
 AddEventHandler('ox_inventory:itemCount', function(itemName, totalCount)
-    if opened and itemName == Config.Tablet.item and totalCount < 1 then closeTablet() end
+    if opened and itemName == tabletItem and totalCount < 1 then closeTablet() end
 end)
 
 RegisterNUICallback('tabletReady', function(_, cb)
-    if not ready then print('[ptech_mediora_core] Tablet 0.2.1: UI ready') end
+    if not ready then print(('[%s] Tablet %s: UI ready'):format(resourceName, version)) end
     ready = true
+    SendNUIMessage({ action = 'progress:theme', theme = progressTheme })
     cb({ ok = true })
+end)
+
+RegisterNUICallback('tabletProgressTheme', function(data, cb)
+    local theme = type(data) == 'table' and data.theme
+    if not opened or type(theme) ~= 'string' or not progressThemes[theme] then
+        cb({ ok = false })
+        return
+    end
+    SetResourceKvp('progressTheme', theme)
+    progressTheme = theme
+    SendNUIMessage({ action = 'progress:theme', theme = theme })
+    cb({ ok = true, theme = theme })
 end)
 
 RegisterNUICallback('tabletClose', function(_, cb)
@@ -69,16 +92,25 @@ RegisterNUICallback('tabletClose', function(_, cb)
     cb({ ok = true })
 end)
 
-RegisterNUICallback('tabletProfile', function(_, cb)
-    if not opened or loading then cb({ ok = false, error = 'busy' }) return end
-    loading = true
+RegisterNUICallback('tabletCharts', function(data, cb)
+    if not opened then cb({ error = 'タブレットを開き直してください' }); return end
+    local target = type(data) == 'table' and tonumber(data.targetId)
+    if not target or target <= 0 or target % 1 ~= 0 then
+        cb({ error = '患者のサーバーIDを入力してください' })
+        return
+    end
+    if GetResourceState('ptech_mediora_medical') ~= 'started' then
+        cb({ error = 'Medicalが停止中のため、カルテを確認できません' })
+        return
+    end
     local requestGeneration = generation
-    local ok, result = pcall(function()
-        return lib.callback.await('ptech_mediora_core:tabletProfile', false)
-    end)
-    loading = false
-    if not opened or requestGeneration ~= generation then cb({ ok = false, error = 'closed' }) return end
-    cb(ok and result or { ok = false, error = 'unavailable' })
+    -- Medical validates the caller's job and duty status on every lookup.
+    local ok, result = pcall(lib.callback.await, 'ptech_mediora_medical:getPatientCharts', 500, target)
+    if not opened or requestGeneration ~= generation then
+        cb({ error = 'カルテの照会を終了しました' })
+        return
+    end
+    cb(ok and type(result) == 'table' and result or { error = 'カルテを取得できませんでした' })
 end)
 
 exports('openTablet', openTablet)
@@ -100,13 +132,21 @@ for _, route in ipairs({ 'tabletAccess', 'tabletResources', 'tabletResourceActio
     end)
 end
 
+local shopRoutes = { tabletShopCatalog = 'catalog', tabletShopPlace = 'place' }
+for route, action in pairs(shopRoutes) do
+    RegisterNUICallback(route, function(data, cb)
+        if not opened or GetResourceState('ptech_mediora_logistics') ~= 'started' then
+            cb({ ok = false, error = '医療物資ストアを利用できません。' })
+            return
+        end
+        local ok, result = pcall(lib.callback.await, 'ptech_mediora_logistics:orders:' .. action, false, data)
+        cb(ok and result or { ok = false, error = '注文結果を確認できません。注文履歴を確認してください。' })
+    end)
+end
+
 exports('closeTablet', closeTablet)
 
-RegisterNetEvent('ptech_mediora_core:tabletRestarting', function()
-    closeTablet()
-end)
-
-print(('[ptech_mediora_core] Tablet 0.2.1: useTablet registered (item=%s)'):format(Config.Tablet.item))
+print(('[%s] Tablet %s: useTablet registered (item=%s)'):format(resourceName, version, tabletItem))
 
 AddEventHandler('QBCore:Client:OnPlayerUnload', closeTablet)
 AddEventHandler('onResourceStop', function(resource)

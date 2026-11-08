@@ -80,7 +80,6 @@ local function startFloat(src, request, water)
     local now = GetGameTimer()
     floats[src] = {
         x = water.coords.x, y = water.coords.y, z = water.coords.z,
-        targetX = water.coords.x, targetY = water.coords.y,
         surface = water.surface + Config.Flotation.SurfaceOffset,
         ticket = sequence, ped = request.ped, patientId = request.patientId, bucket = request.bucket,
         updatedAt = now,
@@ -151,8 +150,9 @@ lib.callback.register('ptech_mediora_marine:reportFlotationObstacle', function(s
 
     if route.blocked == true then
         float.blocked = true
+        float.z = math.min(float.z, route.z)
     else
-        float.targetX, float.targetY = route.x, route.y
+        float.x, float.y = route.x, route.y
         float.blocked = false
     end
     float.updatedAt = GetGameTimer()
@@ -161,38 +161,19 @@ lib.callback.register('ptech_mediora_marine:reportFlotationObstacle', function(s
     return true
 end)
 
--- サーバーを浮上座標の唯一の基準にし、各クライアントへ同じ進行状態を配信する。
+-- サーバーが上昇目標Zを刻み、各クライアントへ同じ進行状態を配信する。
 CreateThread(function()
     while true do
-        Wait(50)
+        Wait(100)
         local now = GetGameTimer()
         for id, float in pairs(floats) do
             if not float.blocked then
-                local elapsed = math.max(0, math.min(now - float.updatedAt, 250)) / 1000
+                local elapsed = math.max(0, math.min(now - float.updatedAt, 500)) / 1000
                 float.updatedAt = now
-                local speed = math.max(0.0, Config.Flotation.RiseSpeed)
-                local step = speed * elapsed
-                local dx, dy = float.targetX - float.x, float.targetY - float.y
-                local distance = math.sqrt(dx * dx + dy * dy)
-                local moved = false
-
-                if distance > 0.0 then
-                    if distance <= step then
-                        float.x, float.y = float.targetX, float.targetY
-                    else
-                        float.x = float.x + dx / distance * step
-                        float.y = float.y + dy / distance * step
-                    end
-                    moved = true
-                end
-
-                local nextZ = math.min(float.surface, float.z + step)
+                local nextZ = math.min(float.surface,
+                    float.z + math.max(0.0, Config.Flotation.RiseSpeed) * elapsed)
                 if nextZ > float.z then
                     float.z = nextZ
-                    moved = true
-                end
-
-                if moved then
                     revision = revision + 1
                     TriggerClientEvent('ptech_mediora_marine:flotation', -1, id, publicFloat(float), revision)
                 end

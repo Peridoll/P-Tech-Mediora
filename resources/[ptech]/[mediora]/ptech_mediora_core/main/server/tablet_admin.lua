@@ -17,7 +17,6 @@ lib.callback.register('ptech_mediora_core:tabletAccess', function(source)
 end)
 
 local resourceLocks = {}
-local coreRestartPending = false
 local operations = {}
 local lifecycle = {}
 local function markLifecycle(name, event)
@@ -26,26 +25,7 @@ local function markLifecycle(name, event)
     lifecycle[name] = record
 end
 AddEventHandler('onResourceStop', function(name) markLifecycle(name, 'stops') end)
-local coreHistoryKey = 'tablet:lastCoreRestart'
-local function saveCoreHistory(phase)
-    local record = { action = 'restart', phase = phase, time = os.time() }
-    SetResourceKvp(coreHistoryKey, json.encode(record))
-end
-local function coreHistory()
-    local saved = GetResourceKvpString(coreHistoryKey)
-    if not saved then return nil end
-    local ok, value = pcall(json.decode, saved)
-    return ok and type(value) == 'table' and value or nil
-end
-AddEventHandler('onResourceStart', function(name)
-    markLifecycle(name, 'starts')
-    if name ~= GetCurrentResourceName() then return end
-    local previous = coreHistory()
-    if not previous or previous.phase ~= 'pending' then return end
-    SetTimeout(1000, function()
-        saveCoreHistory(os.time() - (previous.time or 0) < 60 and GetResourceState(name) == 'started' and 'complete' or 'failed')
-    end)
-end)
+AddEventHandler('onResourceStart', function(name) markLifecycle(name, 'starts') end)
 local function waitForCommand(name, action, before, timeout)
     local deadline = GetGameTimer() + timeout
     local expected = action == 'stop' and 'stopped' or 'started'
@@ -72,8 +52,8 @@ lib.callback.register('ptech_mediora_core:tabletResourceAction', function(source
         return { ok = false, error = 'invalid_action' }
     end
     local core = GetCurrentResourceName()
-    if name == core and action ~= 'restart' then return { ok = false, error = 'core_protected' } end
-    if coreRestartPending or resourceLocks[name] then return { ok = false, error = 'busy' } end
+    if name == core then return { ok = false, error = 'core_protected' } end
+    if resourceLocks[name] then return { ok = false, error = 'busy' } end
     local state = GetResourceState(name)
     if (action == 'start' and state ~= 'stopped') or (action ~= 'start' and state ~= 'started') then
         return { ok = false, error = 'invalid_state' }
@@ -81,21 +61,6 @@ lib.callback.register('ptech_mediora_core:tabletResourceAction', function(source
     if not IsPrincipalAceAllowed('resource.' .. core, 'command.' .. action) then
         print(('[%s] Resource command denied: missing command.%s ACE'):format(core, action))
         return { ok = false, error = 'command_permission' }
-    end
-    if name == core then
-        coreRestartPending = true
-        saveCoreHistory('pending')
-        print(('[%s] Resource action: player=%s action=restart resource=%s'):format(core, source, name))
-        -- Reply first, close all tablets, then let the engine perform the self restart.
-        SetTimeout(1000, function()
-            if not isAdmin(source) or not hasTablet(source) then coreRestartPending = false; saveCoreHistory('failed'); return end
-            TriggerClientEvent('ptech_mediora_core:tabletRestarting', -1)
-            SetTimeout(250, function()
-                ExecuteCommand('restart ' .. core)
-                SetTimeout(2000, function() coreRestartPending = false; saveCoreHistory('failed') end)
-            end)
-        end)
-        return { ok = true, restartingCore = true }
     end
     resourceLocks[name] = true
     operations[name] = { action = action, phase = 'pending', time = os.time() }
@@ -120,7 +85,7 @@ lib.callback.register('ptech_mediora_core:tabletResources', function(source)
     for index = 0, GetNumResources() - 1 do
         local name = GetResourceByFindIndex(index)
         if name and name:match('^ptech_mediora_') then
-            resources[#resources + 1] = { name = name, state = GetResourceState(name), operation = name == GetCurrentResourceName() and coreHistory() or operations[name] }
+            resources[#resources + 1] = { name = name, state = GetResourceState(name), operation = operations[name], consoleOnly = name == GetCurrentResourceName() }
         end
     end
     table.sort(resources, function(a, b) return a.name < b.name end)

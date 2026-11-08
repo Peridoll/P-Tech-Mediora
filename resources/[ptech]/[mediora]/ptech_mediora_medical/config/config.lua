@@ -1,5 +1,15 @@
 Config = {
 
+  -- Coreのバー形状。standard / slim / segmented。
+  ProgressBarStyle = 'standard',
+
+  -- このリソース内のSVGを指定。省略するとCoreの汎用演出を使います。
+  ProgressAnimations = {
+    examination = 'main/ui/progress/examination.svg',
+    treatment = 'main/ui/progress/treatment.svg',
+    revive = 'main/ui/progress/revive.svg',
+  },
+
 --[[_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
 
   【 基本設定 】
@@ -76,15 +86,14 @@ Config = {
     Label    = '診察しています',
 
     Animation = {
-      dict = 'amb@medic@standing@kneel@base',
+      dict = 'amb@world_human_stand_mobile@male@standing@base',
       clip = 'base',
-      flag = 1,
     },
 
     Prop = {
       model = 'prop_cs_tablet',
-      pos   = vec3(0.03, 0.002, -0.02),
-      rot   = vec3(10.0, 160.0, 0.0),
+      pos   = { x = 0.03, y = 0.002, z = -0.02 },
+      rot   = { x = 10.0, y = 160.0, z = 0.0 },
     },
   },
 

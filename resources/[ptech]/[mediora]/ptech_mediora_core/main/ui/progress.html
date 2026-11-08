@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mediora Core</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="tablet.css">
+    <style>
+        body { margin: 0; background: transparent; font-family: 'Segoe UI', 'Meiryo', sans-serif; }
+        [hidden] { display: none !important; }
+        #progress {
+            position: fixed;
+            left: 50%;
+            bottom: 15vh;
+            transform: translateX(-50%);
+            width: min(clamp(270px, 40vh, 420px), 90vw);
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            gap: clamp(9px, 1.35vh, 16px);
+            padding: clamp(8px, 1.05vh, 14px) clamp(13px, 1.7vh, 20px);
+            border: 1px solid #3c5965;
+            border-radius: 9px;
+            background: linear-gradient(115deg, #172b35, #10202a 65%);
+            box-shadow: 0 5px 16px #0811166b;
+            color: #edf7f7;
+            font-size: clamp(12px, 1.55vh, 17px);
+            font-weight: 600;
+            pointer-events: none;
+        }
+        #motion, #dots { width: 6.6vh; flex: none; }
+        #motion { display: block; height: auto; }
+        #progress.large-motion { padding-left: clamp(8px, 1vh, 12px); }
+        #progress.large-motion #motion { width: min(11.12vh, 30%); height: auto; aspect-ratio: 11.12 / 9.04; }
+        :is(#dots, .progress-preview-dots) { color: var(--progress-color, #55d4bc); }
+        .progress-preview-dots { order: -1; width: 4.5vh; flex: none; }
+        :is(#dots, .progress-preview-dots) circle { animation: pulse 1.25s ease-in-out infinite; }
+        :is(#dots, .progress-preview-dots) circle:nth-child(2) { animation-delay: .15s; }
+        :is(#dots, .progress-preview-dots) circle:nth-child(3) { animation-delay: .3s; }
+        @keyframes pulse { 0%, 60%, 100% { opacity: .35; } 30% { opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) { :is(#dots, .progress-preview-dots) circle { animation: none; } }
+        #progress .content { flex: 1; min-width: 0; overflow-wrap: anywhere; text-align: left; }
+        #progress #label { display: block; line-height: 1.35; }
+        #progress .track { height: max(3px, .62vh); margin-top: .95vh; overflow: hidden; background: #314854; border-radius: 9px; }
+        #progress[data-style="slim"] .track { height: max(2px, .28vh); }
+        :is(#progress, .tablet-progress-preview)[data-style="segmented"] .track {
+            height: .8vh; border-radius: 0;
+            mask-image: repeating-linear-gradient(90deg, #000 0 8.5%, transparent 8.5% 10%);
+        }
+        #shared-progress-fill { height: 100%; background: var(--progress-color, #55d4bc); transform: scaleX(0); transform-origin: left; }
+    </style>
+</head>
+<body>
+    <section id="action-panel" class="action-panel is-hidden" aria-live="polite">
+        <div class="panel-navigation">
+            <nav id="tabs" class="indicators is-hidden" role="group" aria-label="表示中のパネル"></nav>
+            <div id="switchHint" class="switch-hint"></div>
+        </div>
+        <div class="heading"><span id="icon" class="ring">◌</span><span id="title">緊急浮上装置</span></div>
+        <div id="message" class="message"></div>
+        <div id="track" class="track is-hidden"><div id="fill" class="fill"></div></div>
+    </section>
+    <section id="progress" hidden aria-live="polite">
+        <img id="motion" alt="" hidden>
+        <svg id="dots" viewBox="0 0 56 44" aria-hidden="true" fill="currentColor"><circle cx="14" cy="22" r="3.5"/><circle cx="28" cy="22" r="3.5"/><circle cx="42" cy="22" r="3.5"/></svg>
+        <div class="content"><span id="label"></span><div class="track"><div id="shared-progress-fill"></div></div></div>
+    </section>
+    <div id="tablet" hidden>
+        <section class="tablet-device" role="dialog" aria-modal="true" aria-label="Mediora タブレット">
+            <div id="tablet-shutter" aria-hidden="true"></div>
+            <button id="tablet-home-button" type="button" aria-label="タブレットを閉じる"></button>
+            <div class="tablet-rail">
+                <aside class="tablet-sidebar">
+                    <div class="tablet-brand" aria-label="Mediora"><b>M</b><span>EDIORA</span></div>
+                    <nav class="tablet-navigation" aria-label="タブレットメニュー">
+                        <button data-page="home" class="selected" aria-label="ホーム"><i aria-hidden="true">⌂</i><span>ホーム</span></button>
+                        <button data-page="charts" aria-label="カルテ確認"><i aria-hidden="true">▤</i><span>カルテ確認</span></button>
+                        <button data-page="shop" aria-label="医療物資ストア"><i aria-hidden="true">▦</i><span>医療物資ストア</span></button>
+                    </nav>
+                    <div class="tablet-sidebar-bottom">
+                        <button id="tablet-admin-link" data-page="resources" aria-label="リソース管理" hidden><i aria-hidden="true">⚒</i><span>リソース管理</span><small>ADMIN</small></button>
+                        <button data-page="settings" aria-label="設定"><i aria-hidden="true">⚙</i><span>設定</span></button>
+                    </div>
+                </aside>
+            </div>
+            <main class="tablet-main">
+                <section id="tablet-home" class="tablet-page" aria-label="ホーム"></section>
+                <section id="tablet-charts" class="tablet-page" hidden>
+                    <h1>カルテ確認</h1>
+                    <form id="tablet-chart-search" class="tablet-chart-search">
+                        <label for="tablet-chart-patient-id">患者のサーバーID</label>
+                        <div><input id="tablet-chart-patient-id" type="number" min="1" step="1" inputmode="numeric" required><button id="tablet-chart-submit" type="submit">照会</button></div>
+                    </form>
+                    <p id="tablet-chart-status" role="status" aria-live="polite"></p>
+                    <div id="tablet-chart-results" hidden>
+                        <h2 id="tablet-chart-patient"></h2>
+                        <label for="tablet-chart-history">診察履歴</label>
+                        <select id="tablet-chart-history"></select>
+                        <article class="tablet-chart-record">
+                            <h3>診察記録</h3>
+                            <p id="tablet-chart-condition"></p>
+                            <ul id="tablet-chart-injuries" aria-label="記録された負傷"></ul>
+                        </article>
+                    </div>
+                </section>
+                <section id="tablet-shop" class="tablet-page" hidden>
+                    <h1>医療物資ストア</h1>
+                    <p>注文時にお支払い。ピルボックスの物資窓口で24時間以内に受け取れます。期限を過ぎた未受取の注文は返金されます。</p>
+                    <p id="tablet-shop-status" class="tablet-muted" role="status"></p>
+                    <div class="shop-layout">
+                        <section class="shop-catalog" aria-label="医療アイテム一覧">
+                            <h2>医療アイテム</h2>
+                            <div id="tablet-shop-items" class="shop-items"></div>
+                        </section>
+                        <section id="tablet-shop-dropzone" class="shop-cart" aria-label="ショッピングカート">
+                            <h2>ショッピングカート</h2>
+                            <p id="tablet-shop-empty" class="shop-empty">ここに商品をドラッグ</p>
+                            <ul id="tablet-shop-cart"></ul>
+                            <div class="shop-checkout">
+                                <strong id="tablet-shop-total" aria-live="polite"></strong>
+                                <button id="tablet-shop-place" type="button" disabled>支払って購入</button>
+                            </div>
+                        </section>
+                    </div>
+                    <h2>注文履歴</h2>
+                    <ul id="tablet-shop-orders"></ul>
+                </section>
+                <section id="tablet-settings" class="tablet-page" hidden>
+                    <h1>設定</h1>
+                    <div class="tablet-progress-settings">
+                        <label for="tablet-progress-theme">プログレスバーの色テーマ</label>
+                        <select id="tablet-progress-theme">
+                            <option value="mediora">ミント（標準）</option>
+                            <option value="blue">マリン</option>
+                            <option value="amber">バナナ</option>
+                            <option value="violet">グレープ</option>
+                            <option value="peach">ピーチ</option>
+                            <option value="lime">ライム</option>
+                        </select>
+                        <div class="tablet-progress-preview" data-style="segmented" aria-label="セグメントバーの色テーマプレビュー">
+                            <span>プレビュー</span>
+                            <div class="progress-line">
+                                <div class="track"><div class="fill" style="width: 65%"></div></div>
+                                <svg class="progress-preview-dots" viewBox="0 0 56 44" aria-hidden="true" fill="currentColor"><circle cx="14" cy="22" r="3.5"/><circle cx="28" cy="22" r="3.5"/><circle cx="42" cy="22" r="3.5"/></svg>
+                            </div>
+                        </div>
+                        <p id="tablet-progress-status" class="tablet-muted" role="status"></p>
+                    </div>
+                </section>
+                <section id="tablet-resources" class="tablet-page" hidden>
+                    <div class="tablet-page-heading"><div><h1>リソース管理</h1><p class="tablet-muted">Mediora リソースの稼働状況</p></div><button id="tablet-refresh">更新</button></div>
+                    <p id="tablet-resource-status" role="status" aria-live="polite"></p>
+                    <ul id="tablet-resource-list" aria-label="リソース一覧"></ul>
+                </section>
+                <p id="tablet-status" role="status" aria-live="polite" hidden></p>
+            </main>
+        </section>
+    </div>
+    <script>
+    (() => {
+        const panel = document.getElementById('progress');
+        const label = document.getElementById('label');
+        const fill = document.getElementById('shared-progress-fill');
+        const motion = document.getElementById('motion');
+        const dots = document.getElementById('dots');
+        let currentId, animation, currentTemplate;
+        function setTemplate(url, plain, svg) {
+            motion.hidden = true;
+            dots.toggleAttribute('hidden', plain === true);
+            motion.onload = null;
+            motion.onerror = null;
+            motion.removeAttribute('src');
+            if (plain || !url) return;
+            motion.onload = () => { motion.hidden = false; dots.setAttribute('hidden', ''); };
+            const accent = getComputedStyle(document.documentElement).getPropertyValue('--progress-color').trim();
+            const color = /^#[0-9a-f]{6}$/i.test(accent) ? accent : '#55d4bc';
+            const themed = typeof svg === 'string' && svg.replace(/var\(--mediora-progress-accent,\s*#[0-9a-f]{6}\)/gi, color);
+            if (themed && themed !== svg) {
+                motion.onerror = () => { motion.onerror = null; motion.src = url; };
+                motion.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(themed);
+            } else {
+                motion.src = url;
+            }
+        }
+        new MutationObserver(() => {
+            if (currentTemplate?.templateSvg && !currentTemplate.plain) {
+                setTemplate(currentTemplate.template, false, currentTemplate.templateSvg);
+            }
+        }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-progress-theme'] });
+        window.addEventListener('message', ({ data }) => {
+            if (data?.action === 'progress:show') {
+                animation?.cancel();
+                currentId = data.id;
+                label.textContent = data.label;
+                panel.dataset.style = data.style || 'segmented';
+                panel.classList.toggle('large-motion', data.largeMotion === true);
+                currentTemplate = data;
+                setTemplate(data.template, data.plain, data.templateSvg);
+                panel.hidden = false;
+                animation = fill.animate([{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: data.duration, fill: 'forwards' });
+            } else if (data?.action === 'progress:hide' && currentId === data.id) {
+                animation?.cancel();
+                currentId = undefined;
+                currentTemplate = undefined;
+                panel.hidden = true;
+                setTemplate();
+            }
+        });
+        async function announceReady() {
+            for (let attempt = 0; attempt < 5; attempt++) {
+                try {
+                    const response = await fetch(`https://${GetParentResourceName()}/progressReady`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+                    if (response.ok) return;
+                } catch {}
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
+        }
+        if (typeof GetParentResourceName === 'function') announceReady();
+    })();
+    </script>
+    <script src="app.js"></script>
+    <script src="tablet.js"></script>
+</body>
+</html>

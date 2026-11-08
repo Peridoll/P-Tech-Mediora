@@ -7,12 +7,11 @@
     <header><div class="brand"><span class="cross">✚</span><div>P-TECH <span>MEDIORA</span><small>診察記録</small></div></div><div class="header-right"><span id="source" class="source"></span><button id="close" class="icon-button" aria-label="閉じる">×</button></div></header>
     <div class="content">
       <div class="patient-heading"><div><p class="eyebrow">PATIENT ASSESSMENT</p><h1 id="patient-title"></h1><p id="captured" class="muted"></p></div><div id="status" class="status"></div></div>
-      <div id="training-note" class="training-note" hidden><b>訓練モード</b><span>模擬データを表示しています。診察・治療・蘇生の実処理は行いません。</span></div>
       <div class="metrics"><article><span>死亡・瀕死状態</span><strong id="death"></strong></article><article><span>表示できた負傷部位</span><strong id="injury-count"></strong></article><article><span>記録上の最大重症度</span><strong id="severity"></strong></article><article><span>記録上の最大出血</span><strong id="bleed"></strong></article></div>
       <section class="injury-section"><div class="section-heading"><h2>負傷の詳細</h2><span>重症度・出血は返却値の 0–4 を表示</span></div><div id="notice" class="notice" hidden></div><div id="injuries" class="injury-grid"></div></section>
       <details id="raw"><summary>取得データを確認</summary><pre id="raw-text"></pre></details>
     </div>
-    <footer><span class="footer-note"><i></i>取得時点の記録 · 自動更新なし</span><div><button id="open-charts" class="secondary" hidden>カルテ一覧</button><button id="manage" class="secondary" hidden>患者の状態を変更</button><button id="refresh" class="primary">再診察する <span>↻</span></button></div></footer>
+    <footer><span class="footer-note"><i></i>取得時点の記録 · 自動更新なし</span><div><button id="open-charts" class="secondary" hidden>カルテ一覧</button><button id="refresh" class="primary">再診察する <span>↻</span></button></div></footer>
   </section>
 </main>
 <main id="chart-app" hidden>
@@ -91,17 +90,17 @@
           </table>
           <section id="chart-supplies" class="chart-supplies" hidden aria-labelledby="chart-supplies-heading">
             <h3 id="chart-supplies-heading">治療明細</h3>
-            <p id="chart-supplies-empty">使用した道具はありません。</p>
+            <p id="chart-supplies-empty">請求対象の処置はありません。</p>
             <table id="chart-supplies-table" class="sheet-findings" hidden>
-              <thead><tr><th scope="col">項目</th><th scope="col">数量</th><th scope="col">単価</th><th scope="col">金額</th></tr></thead>
-              <tbody id="chart-supplies-list"></tbody><tfoot><tr><th colspan="3" scope="row">合計</th><td id="chart-supplies-total"></td></tr></tfoot>
+              <thead><tr><th scope="col">処置</th><th scope="col">箇所</th><th scope="col">金額</th></tr></thead>
+              <tbody id="chart-supplies-list"></tbody><tfoot><tr><th colspan="2" scope="row">合計</th><td id="chart-supplies-total"></td></tr></tfoot>
             </table>
           </section>
             </div>
             </div>
             <figure class="sheet-map">
               <figcaption>負傷部位</figcaption>
-              <div class="chart-body-figure"><svg id="chart-body-map" viewBox="0 0 120 210" aria-hidden="true">
+              <div class="chart-body-figure" id="chart-body-area"><svg id="chart-body-map" viewBox="0 0 120 210" aria-hidden="true">
                 <circle data-part="head" cx="60" cy="22" r="15"/>
                 <path data-part="upper_body" d="M41 42 Q60 36 79 42 L76 91 H44 Z"/>
                 <path data-part="lower_body" d="M44 95 H76 L80 117 Q60 130 40 117 Z"/>
@@ -109,7 +108,12 @@
                 <path data-part="left_arm" d="M83 44 L92 48 L105 108 Q105 115 98 116 L92 112 L80 78 Z"/>
                 <path data-part="right_leg" d="M40 122 L57 129 L53 194 Q48 203 35 198 Z"/>
                 <path data-part="left_leg" d="M80 122 L63 129 L67 194 Q72 203 85 198 Z"/>
-              </svg><div id="chart-health"></div></div>
+              </svg>
+              <div id="chart-photo-layer" hidden>
+              <p id="chart-photo-status">診察写真なし</p>
+              <img id="chart-photo" alt="診察時の患者写真" hidden>
+              <svg id="chart-callout-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+              <div id="chart-callouts"></div></div><div id="chart-health"></div></div>
               <div id="chart-vitals" class="chart-vitals" aria-label="現在の患者状態"></div>
             </figure>
           </div>

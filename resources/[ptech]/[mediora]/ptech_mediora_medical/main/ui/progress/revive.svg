@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" style="color:var(--mediora-progress-accent, #ef7989)" viewBox="0 0 56 44" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 10V6q0-3 4-3h26q4 0 4 3v4" opacity=".6"/>
+            <path class="progress-paddle-left" d="M3 14h11v14H3zM6 28v6h5v-6" fill="#142a35"/>
+            <path class="progress-paddle-right" d="M42 14h11v14H42zM45 28v6h5v-6" fill="#142a35"/>
+            <path class="progress-shock" d="M29 10 21 23h7l-2 12 10-16h-7z" fill="currentColor" stroke="none"/>
+        <style>
+.progress-paddle-left { animation: progress-paddle-left 1.8s ease-in-out infinite; }
+.progress-paddle-right { animation: progress-paddle-right 1.8s ease-in-out infinite; }
+.progress-shock { animation: progress-shock 1.8s ease-in-out infinite; }
+@keyframes progress-paddle-left { 30%, 55% { transform: translateX(6px); } }
+@keyframes progress-paddle-right { 30%, 55% { transform: translateX(-6px); } }
+@keyframes progress-shock { 0%, 25%, 65%, 100% { opacity: .2; } 45% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { svg * { animation: none !important; } }
+</style>
+</svg>

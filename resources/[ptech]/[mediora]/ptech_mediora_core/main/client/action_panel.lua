@@ -1,5 +1,5 @@
 local panels = {}
-local switchKey = (Config.ActionPanel and Config.ActionPanel.switchKey) or 'Z'
+local switchKey = (Config and Config.ActionPanel and Config.ActionPanel.switchKey) or 'Z'
 local keybind
 
 local function send(action, data)

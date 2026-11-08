@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 44" style="color:var(--mediora-progress-accent, #79dfce)" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M18 11h17l4 17H14zM19 28h15v5H19z" fill="#24444d"/>
+  <path d="M21 20h11m-5-5v10" opacity=".6"/>
+  <path class="motion" d="M38 28q4 4 4 6a4 4 0 0 1-8 0q0-2 4-6z" fill="currentColor"/>
+  <style>
+    .motion { animation: treatment-motion 1.5s ease-in-out infinite; }
+    @keyframes treatment-motion { 0%,100% { transform:translateY(-4px);opacity:.25; } 60% { transform:translateY(2px);opacity:1; } }
+    @media (prefers-reduced-motion: reduce) { .motion { animation: none; } }
+  </style>
+</svg>

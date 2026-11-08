@@ -8,21 +8,26 @@ description 'Mediora Logistics'
 version '0.3.2'
 
 dependencies {
+  'ptech_mediora_core',
   'qbx_core',
   'ox_lib',
   'ox_inventory',
+  'oxmysql',
   '/onesync',
 }
 
 shared_scripts {
   '@ox_lib/init.lua',
-  'config/config.lua',
-  'config/items.lua',
-  'config/recipes.lua',
+  'config.lua',
+  'install/ox_inventory/items.lua',
+  'recipes.lua',
 }
 
-ui_page 'main/ui/index.html'
-files { 'main/ui/index.html' }
+files { 'main/ui/progress/*.svg' }
 
 client_script 'main/client/client.lua'
-server_script 'main/server/server.lua'
+server_scripts {
+  '@oxmysql/lib/MySQL.lua',
+  'main/server/server.lua',
+  'main/server/orders.lua',
+}

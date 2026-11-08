@@ -53,6 +53,7 @@
 @media (prefers-reduced-motion: reduce) {
   .exam-typing { animation: none; }
 }
+.exam-progress-icon { width: 104px; height: auto; transform: scaleX(1.15); }
 .revive-progress-icon, .revive-progress .exam-progress-icon { display: none; }
 .revive-progress .revive-progress-icon { display: block; }
 .revive-progress #exam-fill { background: #ef7989; }

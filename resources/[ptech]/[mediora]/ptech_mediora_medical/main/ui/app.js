@@ -12,7 +12,7 @@ const bleedLabels = ['なし', '少量', '少量', '多量', '多量'];
 const severityLabel = (value, cause) => cause && value === 1 ? '軽傷' : cause && value === 3 ? '重傷' : labels[value];
 const validLevel = value => Number.isInteger(value) && value >= 0 && value <= 4;
 const bodyNames = { head: '頭部', upper_body: '上半身', lower_body: '下半身', left_arm: '左腕', right_arm: '右腕', left_leg: '左脚', right_leg: '右脚' };
-const kinds = { shot: '銃創', stabbed: '刺創', beat: '打撲', burned: '火傷' };
+const kinds = { blunt: '打ち身', bruise: '打撲', cut: '切り傷', burn: '火傷', pin: '通電ピン', fracture: '骨折', bleeding: '出血', shot: '銃創', stabbed: '刺創', beat: '打撲', burned: '火傷', starvation: '餓死', drowning: '溺死' };
 
 function renderInjuries(list, injuries) {
   list.replaceChildren();
@@ -46,9 +46,8 @@ function render(data) {
   chartApp.hidden = true;
   app.hidden = false;
   text('patient-title', data.title || '診察記録');
-  text('source', data.training ? 'NPC · TRAINING' : 'PLAYER · WASABI');
-  text('captured', '取得時刻 ' + new Date().toLocaleTimeString('ja-JP') + ' · ' + (data.training ? '訓練患者のサンプル' : '対象プレイヤーの取得情報'));
-  byId('training-note').hidden = !data.training;
+  text('source', 'PLAYER · WASABI');
+  text('captured', '取得時刻 ' + new Date().toLocaleTimeString('ja-JP') + ' · 対象プレイヤーの取得情報');
   const critical = ['死亡', '瀕死（laststand）'].includes(data.death);
   const unknown = !data.death || data.death.startsWith('不明');
   text('status', critical ? '行動不能' : unknown ? '状態未確認' : '死亡フラグなし');
@@ -71,10 +70,8 @@ function render(data) {
   renderInjuries(byId('injuries'), injuries.slice(0, 40));
   byId('raw').open = false;
   text('raw-text', data.details || 'データなし');
-  byId('manage').hidden = !data.canManage;
   byId('open-charts').hidden = !data.canOpenCharts;
   byId('refresh').disabled = !data.canRefresh;
-  byId('manage').disabled = false;
   byId('close').focus();
 }
 
@@ -100,7 +97,7 @@ function showTreatment(open) {
   byId('treatment-screen').hidden = !open;
   chartApp.classList.toggle('treatment-mode', open);
   byId('chart-list').inert = open;
-  byId('chart-search').hidden = open;
+  byId('chart-search').style.visibility = open ? 'hidden' : '';
   byId('chart-treat').hidden = open || byId('chart-detail').hidden;
 }
 
@@ -120,7 +117,120 @@ function issuedDate(value) {
 }
 
 const treatmentImages = { bandage: 'bandage', forceps: 'surgicalforceps', needle: 'needleandthread', health: 'firstaidkit', beat: 'icepack', shot: 'bulletextractionkit', stabbed: 'suturekit', burned: 'burncream' };
-const treatmentImage = kind => 'https://cfx-nui-ox_inventory/web/images/pmediora_' + treatmentImages[kind] + '.png';
+const treatmentImage = kind => 'https://cfx-nui-ox_inventory/web/images/' + (kind.startsWith('pmediora_') ? kind : 'pmediora_' + treatmentImages[kind]) + '.png';
+
+const calloutPositions = {
+  head: [0, 13], upper_body: [1, 25], lower_body: [0, 45],
+  right_arm: [0, 30], left_arm: [1, 40], right_leg: [0, 69], left_leg: [1, 75],
+};
+let photoRender = 0;
+
+const isSystemicFinding = row => row.kind === 'starvation' || row.kind === 'drowning';
+
+function findingSeverity(injury) {
+  if (isSystemicFinding(injury)) return '要点滴';
+  if (injury.suppressed) return '緩和中';
+  if (injury.model !== 'medical') return validLevel(injury.severity) ? severityLabel(injury.severity, injury.cause) : '—';
+  if (['blunt', 'cut'].includes(injury.kind)) return injury.severity === 1 ? '軽度' : '重度';
+  if (injury.kind === 'bruise') return injury.severity === 3 ? '軽度' : '重度';
+  return 'あり';
+}
+
+function renderChartCallouts(chart, figure, injuries, options, tools) {
+  const photo = byId('chart-photo');
+  const wires = byId('chart-callout-lines');
+  const container = byId('chart-callouts');
+  const photoStatus = byId('chart-photo-status');
+  const version = ++photoRender;
+  photo.hidden = true;
+  photoStatus.hidden = false;
+  wires.setAttribute('hidden', '');
+  photo.removeAttribute('src');
+  figure.classList.remove('photo-backed');
+  wires.replaceChildren();
+  container.replaceChildren();
+  const groups = new Map();
+  for (const row of injuries) {
+    if (!calloutPositions[row.part]) continue;
+    if (!groups.has(row.part)) groups.set(row.part, []);
+    groups.get(row.part).push(row);
+  }
+  for (const [index, row] of (chart.injuries || []).entries()) {
+    if (chart.treated?.[index + 1] && calloutPositions[row.part] && !groups.has(row.part)) groups.set(row.part, []);
+  }
+  const connectors = [];
+  for (const [part, rows] of groups) {
+    const [side, top] = calloutPositions[part];
+    const card = document.createElement('div');
+    card.className = 'chart-callout' + (side ? ' callout-right' : '') + (rows.length ? '' : ' callout-healed');
+    card.dataset.part = part;
+    card.tabIndex = 0;
+    card.style.top = top + '%';
+    const title = document.createElement('strong');
+    const first = rows[0];
+    title.textContent = (first && rows.every(isSystemicFinding) ? '-' : bodyNames[part]) + ' · ' + (first ? kinds[first.kind] || first.kind || '負傷' : '処置済')
+      + (rows.length > 1 ? ' +' + (rows.length - 1) : '');
+    const detail = document.createElement('div');
+    detail.className = 'chart-callout-detail';
+    for (const row of rows) {
+      const line = document.createElement('div');
+      line.textContent = (kinds[row.kind] || row.kind) + ' · ' + findingSeverity(row);
+      detail.append(line);
+    }
+    const compatible = [...new Set([...options].filter(option => option.dataset.part === part).map(option => tools[option.dataset.kind]))];
+    if (compatible.length) {
+      const line = document.createElement('small');
+      line.textContent = compatible.join(' / ');
+      detail.append(line);
+    }
+    card.append(title, detail);
+    container.append(card);
+    const wire = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    const endX = side ? 70 : 30;
+    wire.setAttribute('x2', endX);
+    wire.setAttribute('y2', top + 4);
+    dot.setAttribute('r', '1.4');
+    wires.append(wire, dot);
+    if (!rows.length || rows.some(row => !isSystemicFinding(row))) connectors.push({ part, wire, dot });
+    else { wire.setAttribute('display', 'none'); dot.setAttribute('display', 'none'); }
+  }
+  const position = (anchors, photoRatio) => {
+    const panelRatio = figure.clientWidth / figure.clientHeight;
+    const scaleX = photoRatio ? Math.max(1, photoRatio / panelRatio) : 1;
+    const scaleY = photoRatio ? Math.max(1, panelRatio / photoRatio) : 1;
+    for (const entry of connectors) {
+      const point = anchors[entry.part];
+      entry.wire.style.display = entry.dot.style.display = point ? '' : 'none';
+      if (!point) continue;
+      const x = 50 + (point.x - 0.5) * 100 * scaleX;
+      const y = 50 + (point.y - 0.5) * 100 * scaleY;
+      const inFrame = x >= 0 && x <= 100 && y >= 0 && y <= 100;
+      entry.wire.style.display = entry.dot.style.display = inFrame ? '' : 'none';
+      entry.wire.setAttribute('x1', x);
+      entry.wire.setAttribute('y1', y);
+      entry.dot.setAttribute('cx', x);
+      entry.dot.setAttribute('cy', y);
+    }
+  };
+  if (chart.hasPhoto) {
+    const request = chartRequest;
+    postNui('getChartPhoto', { chartId: chart.chartId }).then(data => {
+      if (version !== photoRender || request !== chartRequest || chartApp.hidden
+          || !data?.image?.startsWith('data:image/jpeg;base64,')) return;
+      photo.onload = () => {
+        if (version !== photoRender || request !== chartRequest || chartApp.hidden) return;
+        photo.hidden = false;
+        photoStatus.hidden = true;
+        wires.removeAttribute('hidden');
+        figure.classList.add('photo-backed');
+        position(data.anchors || {}, photo.naturalWidth / photo.naturalHeight);
+      };
+      photo.src = data.image;
+    }).catch(() => {});
+  }
+  return [...container.children];
+}
 
 function renderCharts(result, preferredId, openTreatment) {
   const charts = Array.isArray(result.charts) ? result.charts : [];
@@ -136,49 +246,65 @@ function renderCharts(result, preferredId, openTreatment) {
     text('chart-issued', issuedDate(chart.issuedAt));
     text('chart-examiner', chart.examinerName || '未記録');
     text('chart-observation', chart.observationStatus || '取得状態未記録');
-    byId('chart-observation').hidden = chart.observationStatus === 'Wasabiの負傷同期記録';
+    byId('chart-observation').hidden = ['Wasabiの負傷同期記録', 'Medical受傷記録'].includes(chart.observationStatus);
     const treatment = byId('chart-treatment');
     const selectInjury = byId('chart-treatment-injury');
     byId('treatment-screen').hidden = true;
     text('chart-treatment-result', '');
     selectInjury.replaceChildren();
     selectInjury.disabled = false;
-    const tools = { bandage: '包帯', forceps: 'ピンセット', needle: '針と糸', health: '医療キット', beat: '冷却パック', shot: '弾丸除去キット', stabbed: '縫合キット', burned: '火傷用クリーム' };
-    (chart.injuries || []).forEach((injury, index) => {
-      if (!Object.hasOwn(bodyNames, injury.part)) return;
-      const id = index + 1;
-      const methods = [];
-      if (!chart.treated?.[id] && Object.hasOwn(tools, injury.kind)) {
-        methods.push(injury.kind);
-        if (injury.kind === 'shot') methods.push('forceps');
-        if (injury.kind === 'stabbed') methods.push('needle');
-      }
-      if ((chart.bleeding?.[id] ?? injury.bleed) > 0) methods.push('bandage');
-      for (const method of methods) {
-        const option = new Option(bodyNames[injury.part] + '／' + tools[method], id + ':' + method);
-        option.dataset.part = injury.part;
-        option.dataset.kind = method;
+    const archived = chart.archived === true;
+    const nativeRows = (archived ? chart.currentInjuries : result.currentInjuries ?? chart.currentInjuries)
+      ?? (chart.injuries || []).filter((_, index) => !chart.treated?.[index + 1]);
+    const definitions = result.itemDefinitions || {};
+    const tools = {};
+    const available = archived ? [] : result.treatmentItems || [];
+    for (const item of available) tools[item.name] = item.label;
+    const compatible = (part, item) => {
+      const spec = definitions[item];
+      if (!spec) return false;
+      const rows = nativeRows.filter(row => row.part === part);
+      return (spec.kinds || []).some(kind => rows.some(row => row.kind === kind || kind === 'blunt' && row.kind === 'bruise'))
+        || spec.fracture && rows.some(row => row.kind === 'fracture')
+        || spec.bleeding && rows.some(row => row.kind === 'bleeding')
+        || spec.suppressFracture && rows.some(row => row.kind === 'fracture' && !row.suppressed)
+        || spec.suppressBleeding && rows.some(row => row.kind === 'bleeding' && !row.suppressed);
+    };
+    for (const item of available) {
+      for (const part of Object.keys(bodyNames)) {
+        if (!compatible(part, item.name)) continue;
+        const option = new Option(bodyNames[part] + '／' + item.label, part + ':' + item.name);
+        option.dataset.part = part;
+        option.dataset.kind = item.name;
         selectInjury.add(option);
       }
-    });
-    if (Number.isFinite(result.vitals?.health) && result.vitals.health < 100 && !result.vitals.down) {
-      const option = new Option('体力／医療キット', 0);
-      option.dataset.part = 'health';
-      option.dataset.kind = 'health';
-      selectInjury.add(option);
+      if (definitions[item.name]?.heal && result.vitals?.health < 100 && !result.vitals?.down) {
+        const option = new Option('体力／' + item.label, 'health:' + item.name);
+        option.dataset.part = 'health'; option.dataset.kind = item.name;
+        selectInjury.add(option);
+      }
+      const ivCase = result.canReceiveIV && nativeRows.find(row => definitions[item.name]?.ivRecovery?.[row.kind]);
+      if (ivCase) {
+        const option = new Option('点滴／' + kinds[ivCase.kind], 'upper_body:' + item.name);
+        option.dataset.part = 'upper_body';
+        option.dataset.kind = item.name;
+        option.dataset.wholeBody = 'true';
+        selectInjury.add(option);
+      }
     }
     const treat = byId('chart-treat');
     const revive = byId('chart-revive');
-    const remaining = (chart.injuries || []).some((injury, index) => Object.hasOwn(bodyNames, injury.part) && (!chart.treated?.[index + 1] || (chart.bleeding?.[index + 1] ?? injury.bleed) > 0));
+    const remaining = nativeRows.length > 0;
+    const treatmentPending = remaining || selectInjury.options.length > 0;
     const down = ['死亡', '瀕死（laststand）'].includes(chart.death);
-    treat.firstElementChild.textContent = !remaining ? '治療済' : '治療';
-    treat.classList.toggle('stamped', !remaining);
-    treat.disabled = !selectInjury.options.length;
+    treat.firstElementChild.textContent = archived ? '治療\n無効' : !treatmentPending ? '治療済' : '治療';
+    treat.classList.toggle('stamped', !archived && !treatmentPending);
+    treat.disabled = archived || !!chart.invoiceId || !selectInjury.options.length;
     const unnecessary = !chart.revived && chart.death === '死亡・瀕死フラグなし';
-    revive.firstElementChild.textContent = chart.revived ? '蘇生済' : unnecessary ? '不要' : '蘇生';
+    revive.firstElementChild.textContent = chart.revived ? '蘇生済' : unnecessary ? '蘇生\n不要' : archived ? '蘇生\n無効' : '蘇生';
     revive.classList.toggle('unnecessary', unnecessary);
     revive.classList.toggle('stamped', !!chart.revived || unnecessary);
-    revive.disabled = remaining || !down || !!chart.revived;
+    revive.disabled = archived || !!chart.invoiceId || remaining || !down || !!chart.revived;
     byId('chart-revive-result').hidden = true;
     revive.onclick = async () => {
       revive.disabled = true;
@@ -216,17 +342,21 @@ function renderCharts(result, preferredId, openTreatment) {
       (key === 'health' ? health : vitals).append(gauge);
     }
     const toolList = byId('treatment-tools');
-    const figure = byId('chart-body-map');
-    const treatmentRegions = [...figure.querySelectorAll('[data-part]'), health];
-    let hoveredRegion;
-    const matching = (part, kind) => Array.from(selectInjury.options)
-      .filter(option => option.dataset.part === part && option.dataset.kind === kind);
+    const diagram = byId('chart-body-map');
+    const usePhoto = result.photoEnabled === true;
+    diagram.toggleAttribute('hidden', usePhoto);
+    byId('chart-photo-layer').hidden = !usePhoto;
+    const regions = usePhoto
+      ? renderChartCallouts(chart, byId('chart-body-area'), nativeRows, selectInjury.options, tools)
+      : [...diagram.querySelectorAll('[data-part]')];
+    const treatmentRegions = [...regions, health];
+    let hoveredRegion, hoveredWholeBody = false;
+    const matching = (part, kind) => Array.from(selectInjury.options).filter(option =>
+      option.dataset.kind === kind && (option.dataset.wholeBody === 'true' ? Object.hasOwn(bodyNames, part) : option.dataset.part === part));
     const updateMap = () => {
       const options = Array.from(selectInjury.options);
       for (const region of treatmentRegions) {
-        const part = region.dataset.part;
-        region.classList.toggle('injured', options.some(option => option.dataset.part === part));
-        region.classList.toggle('drop-ready', region === hoveredRegion);
+        region.classList.toggle('drop-ready', region === hoveredRegion || (hoveredWholeBody && region !== health));
       }
       for (const card of toolList.children) {
         card.disabled = !options.some(option => option.dataset.kind === card.dataset.kind);
@@ -263,10 +393,12 @@ function renderCharts(result, preferredId, openTreatment) {
           ghost.style.left = event.clientX + 'px';
           ghost.style.top = event.clientY + 'px';
           const region = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-part]');
-          const nextRegion = region && treatmentRegions.includes(region) && matching(region.dataset.part, kind).length
-            ? region : undefined;
-          if (nextRegion !== hoveredRegion) {
+          const option = region && treatmentRegions.includes(region) && matching(region.dataset.part, kind)[0];
+          const nextRegion = option ? region : undefined;
+          const wholeBody = option?.dataset.wholeBody === 'true';
+          if (nextRegion !== hoveredRegion || wholeBody !== hoveredWholeBody) {
             hoveredRegion = nextRegion;
+            hoveredWholeBody = wholeBody;
             updateMap();
           }
         };
@@ -278,6 +410,7 @@ function renderCharts(result, preferredId, openTreatment) {
           if (!ghost) return;
           ghost.remove();
           hoveredRegion = undefined;
+          hoveredWholeBody = false;
           updateMap();
           if (event.type !== 'pointerup' || byId('treatment-screen').hidden) return;
           const region = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-part]');
@@ -308,10 +441,14 @@ function renderCharts(result, preferredId, openTreatment) {
       const version = chartRequest;
       try {
         const response = await postNui('treatChartInjury', {
-          targetId: result.patient.serverId, chartId: chart.chartId, index: Number(option.value.split(':')[0]), method: option.dataset.kind,
+          targetId: result.patient.serverId, chartId: chart.chartId, part: option.dataset.part === 'health' ? 'upper_body' : option.dataset.part, item: option.dataset.kind,
         });
         if (response?.started || version !== chartRequest || !option.isConnected) return;
         text('chart-treatment-result', response?.ok ? '処置しました。蘇生後にこの傷は戻りません。' : response?.error || '治療に失敗しました。');
+        if (response?.ok && response.result) {
+          renderCharts(response.result, chart.chartId, true);
+          return;
+        }
         if (response?.ok) {
           option.remove();
           updateMap();
@@ -328,38 +465,31 @@ function renderCharts(result, preferredId, openTreatment) {
     };
     text('chart-patient-name', result.patient.name || '氏名未登録');
     text('sheet-id', result.patient.serverId);
-    const supplyNames = {
-      pmediora_firstaidkit: '救急キット', pmediora_bandage: '包帯',
-      pmediora_icepack: '冷却パック', pmediora_bulletextractionkit: '摘出キット',
-      pmediora_surgicalforceps: 'ピンセット', pmediora_suturekit: '縫合キット',
-      pmediora_needleandthread: '針と糸', pmediora_burncream: '火傷クリーム',
-    };
     const supplies = byId('chart-supplies-list');
     supplies.replaceChildren();
     const yen = amount => new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(amount);
-    const addCharge = (label, count, unit) => {
+    const addCharge = (label, siteCount, amount) => {
       const row = supplies.insertRow();
       row.insertCell().textContent = label;
-      row.insertCell().textContent = String(count);
-      row.insertCell().textContent = yen(unit);
-      row.insertCell().textContent = yen(count * unit);
+      row.insertCell().textContent = siteCount > 0 ? `${siteCount}か所` : '—';
+      row.insertCell().textContent = Number.isFinite(amount) ? yen(amount) : '単価未設定';
     };
-    for (const charge of chart.charges || []) {
-      addCharge(supplyNames[charge.item] || charge.item, charge.quantity, charge.unit);
+    for (const charge of chart.treatmentCharges || []) {
+      addCharge(charge.label, charge.siteCount, charge.amount);
     }
-    if (chart.treatmentFee) addCharge('治療対応費', 1, chart.treatmentFee);
-    if (chart.reviveFee) addCharge(chart.reviveLabel + '対応費', 1, chart.reviveFee);
-    text('chart-supplies-total', yen(chart.totalCharge || 0));
+    if (chart.treatmentFee) addCharge('治療対応費', 0, chart.treatmentFee);
+    if (chart.reviveFee) addCharge(chart.reviveLabel + '対応費', 0, chart.reviveFee);
+    text('chart-supplies-total', chart.unpriced ? '単価未設定' : yen(chart.totalCharge || 0));
     byId('chart-supplies-table').hidden = !supplies.rows.length;
     byId('chart-supplies-empty').hidden = !!supplies.rows.length;
     const bill = byId('chart-bill');
-    bill.firstElementChild.textContent = chart.invoiceId ? '請求済' : '請求';
+    bill.firstElementChild.textContent = archived ? '請求\n無効' : chart.invoiceId ? '請求済' : '請求';
     bill.classList.toggle('stamped', !!chart.invoiceId);
     const billingWindow = byId('chart-billing-window');
     const category = byId('chart-billing-revive');
     const sendBill = byId('chart-billing-submit');
     const reviveFees = { field: 800000, hospital: 400000, police: 300000, jail: 200000 };
-    bill.disabled = !!chart.invoiceId || remaining || (down && !chart.revived) || !(chart.totalCharge > 0 || chart.revived);
+    bill.disabled = archived || !!chart.unpriced || !!chart.invoiceId || !(chart.totalCharge > 0 || chart.revived);
     const updateTotal = () => {
       text('chart-billing-total', yen((chart.totalCharge || 0) + (chart.revived ? reviveFees[category.value] || 0 : 0)));
       sendBill.disabled = !!chart.revived && !category.value;
@@ -394,37 +524,43 @@ function renderCharts(result, preferredId, openTreatment) {
         updateTotal();
       }
     };
-    const showSummary = !remaining && supplies.rows.length > 0;
+    const showSummary = supplies.rows.length > 0;
+    const resolvedConditions = (chart.injuries || []).filter((row, index) =>
+      isSystemicFinding(row) && chart.treated?.[index + 1]);
+    const hideFindings = showSummary && !remaining && !resolvedConditions.length;
     byId('chart-supplies').hidden = !showSummary;
-    byId('chart-findings-heading').hidden = showSummary;
-    byId('chart-injuries').closest('table').hidden = showSummary;
+    byId('chart-findings-heading').hidden = hideFindings;
+    byId('chart-injuries').closest('table').hidden = hideFindings;
     if (showSummary) byId('chart-observation').hidden = true;
     const findings = byId('chart-injuries');
     findings.replaceChildren();
-    const injuries = Array.isArray(chart.injuries)
-      ? chart.injuries.map((injury, index) => ({
-        ...injury, bleed: chart.bleeding?.[index + 1] ?? injury.bleed, woundTreated: !!chart.treated?.[index + 1],
-      })).filter(injury => Object.hasOwn(bodyNames, injury.part) && (!injury.woundTreated || injury.bleed > 0)) : [];
-    const injuredParts = new Set(injuries.map(injury => injury.part));
-    for (const region of byId('chart-body-map').querySelectorAll('[data-part]')) {
-      const part = region.dataset.part;
-      region.classList.toggle('injured', injuredParts.has(part));
-      region.classList.toggle('healed', !injuredParts.has(part) && chart.injuries.some((injury, index) =>
-        injury.part === part && chart.treated?.[index + 1]));
+    const injuries = nativeRows;
+    if (!usePhoto) {
+      const injuredParts = new Set(injuries.filter(row => !isSystemicFinding(row)).map(row => row.part));
+      for (const region of regions) {
+        const part = region.dataset.part;
+        region.classList.toggle('injured', injuredParts.has(part));
+        region.classList.toggle('healed', !injuredParts.has(part) && chart.injuries.some((injury, index) =>
+          !isSystemicFinding(injury) && injury.part === part && chart.treated?.[index + 1]));
+      }
     }
     for (const injury of injuries) {
       const row = findings.insertRow();
       row.className = 'injury-card';
-      row.insertCell().textContent = injury.body || bodyNames[injury.part];
+      row.insertCell().textContent = isSystemicFinding(injury) ? '-' : injury.body || bodyNames[injury.part];
       row.insertCell().textContent = injury.woundTreated ? '-' : (kinds[injury.kind] || injury.kind || '-');
       const severity = row.insertCell();
-      severity.textContent = !injury.woundTreated && validLevel(injury.severity) ? severityLabel(injury.severity, injury.cause) : '-';
+      severity.textContent = injury.woundTreated ? '-' : findingSeverity(injury);
       severity.classList.toggle('sheet-alert', validLevel(injury.severity) && injury.severity >= 3);
       const bleed = row.insertCell();
       bleed.textContent = validLevel(injury.bleed) ? bleedLabels[injury.bleed] : '-';
       bleed.classList.toggle('sheet-alert', validLevel(injury.bleed) && injury.bleed > 0);
     }
-    if (!injuries.length) {
+    for (const condition of resolvedConditions) {
+      const row = findings.insertRow();
+      for (const value of ['-', kinds[condition.kind], '処置済', '—']) row.insertCell().textContent = value;
+    }
+    if (!injuries.length && !resolvedConditions.length) {
       const cell = findings.insertRow().insertCell();
       cell.colSpan = 4;
       cell.textContent = '表示できる負傷記録はありません。';
@@ -445,7 +581,7 @@ function renderCharts(result, preferredId, openTreatment) {
   if (charts.length) {
     const preferred = charts.findIndex(chart => chart.chartId === preferredId);
     select(preferred >= 0 ? preferred : 0);
-    if (openTreatment && preferred >= 0) {
+    if (openTreatment && preferred >= 0 && !charts[preferred].archived) {
       byId('chart-treat').onclick();
       if (!byId('chart-treatment-injury').options.length) {
         text('chart-treatment-result', '処置できる傷は残っていません。');
@@ -459,7 +595,7 @@ async function searchCharts(preferredId, openTreatment) {
   const request = chartRequest;
   clearChartResults();
   const targetId = Number(byId('chart-patient-id').value);
-  if (!Number.isSafeInteger(targetId) || targetId <= 0) {
+  if (!Number.isSafeInteger(targetId) || targetId < 1) {
     chartNotice('患者IDには正の整数を入力してください。');
     return;
   }
@@ -521,7 +657,7 @@ function openCharts(data) {
   byId('chart-patient-id').value = Number.isSafeInteger(data.targetId) && data.targetId > 0 ? data.targetId : '';
   chartNotice('患者IDを入力してカルテを確認してください。');
   byId('chart-patient-id').focus();
-  if (byId('chart-patient-id').value) searchCharts(data.chartId, data.openTreatment);
+  if (byId('chart-patient-id').value !== '') searchCharts(data.chartId, data.openTreatment);
 }
 
 async function action(name) {
@@ -529,7 +665,6 @@ async function action(name) {
   if (preview) {
     if (name === 'close') { app.hidden = true; animateTablet(true); }
     if (name === 'refresh') render(sample);
-    if (name === 'manage') { sample.death = sample.death === '死亡' ? '死亡・瀕死フラグなし' : '死亡'; render(sample); }
     return;
   }
   if (typeof GetParentResourceName !== 'function') return;
@@ -551,7 +686,6 @@ async function action(name) {
 
 byId('close').addEventListener('click', () => action('close'));
 byId('refresh').addEventListener('click', () => action('refresh'));
-byId('manage').addEventListener('click', () => action('manage'));
 byId('open-charts').addEventListener('click', () => action('charts'));
 byId('close-charts').addEventListener('click', () => action('close'));
 byId('chart-search').addEventListener('submit', event => { event.preventDefault(); searchCharts(); });
@@ -565,9 +699,9 @@ window.addEventListener('message', event => {
   if (message.action === 'close') { uiVersion++; cancelChartRequest(); app.hidden = true; animateTablet(true); pending = false; }
 });
 const sample = {
-  title: '訓練患者 — 負傷：銃創・打撲', death: '死亡・瀕死フラグなし', training: true, mode: 'ready',
+  title: '表示サンプル — 負傷：銃創・打撲', death: '死亡・瀕死フラグなし', mode: 'ready',
   injuries: [{ body: '左腕', kind: '銃創', severity: 2, bleed: 1 }, { body: '上半身', kind: '打撲', severity: 1, bleed: 0 }],
-  details: 'injuries.left_arm.type: shot\ninjuries.left_arm.data.level: 2\ninjuries.left_arm.data.bleed: 1', canRefresh: true, canManage: true,
+  details: 'injuries.left_arm.type: shot\ninjuries.left_arm.data.level: 2\ninjuries.left_arm.data.bleed: 1', canRefresh: true,
 };
 if (preview) { document.body.classList.add('preview-background'); render(sample); }
 
@@ -576,7 +710,7 @@ window.addEventListener('message', ({ data }) => {
   const panel = byId('exam-progress');
   panel.classList.toggle('revive-progress', data.mode === 'revive');
   const tool = byId('treatment-progress-tool');
-  const hasTool = data.mode === 'treatment' && Object.hasOwn(treatmentImages, data.tool);
+  const hasTool = data.mode === 'treatment' && typeof data.tool === 'string' && (data.tool.startsWith('pmediora_') || Object.hasOwn(treatmentImages, data.tool));
   panel.classList.toggle('tool-progress', hasTool);
   if (hasTool) {
     tool.hidden = false;

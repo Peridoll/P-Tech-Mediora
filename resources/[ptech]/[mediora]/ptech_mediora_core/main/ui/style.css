@@ -22,7 +22,15 @@ html, body {
 .heading { margin-top: .55vh; }
 .message { margin-top: .7vh; font-size: 1.5vh; font-weight: 600; line-height: 1.45; }
 .track { height: .55vh; margin-top: 1.15vh; overflow: hidden; background: rgba(255,255,255,.16); border-radius: 9px; }
-.fill { width: 0; height: 100%; background: var(--panel-accent, #55d4bc); border-radius: inherit; transition: width .05s linear; }
+.fill { width: 0; height: 100%; background: var(--progress-color, var(--panel-accent, #55d4bc)); border-radius: inherit; transition: width .05s linear; }
+.progress-line { display: flex; align-items: center; gap: .8vh; margin-top: .6vh; }
+.progress-line .track { flex: 1; margin-top: 0; }
 .switch-hint { color: rgba(247,250,252,.52); font-size: 1.05vh; text-align: right; }
 .state-error { border-left-color: #e65353; }
 .state-error .heading { color: #ff8b8b; }
+
+:root[data-progress-theme="blue"] { --progress-color: #60a5fa; }
+:root[data-progress-theme="amber"] { --progress-color: #f4be58; }
+:root[data-progress-theme="violet"] { --progress-color: #bc9cff; }
+:root[data-progress-theme="peach"] { --progress-color: #ff9c85; }
+:root[data-progress-theme="lime"] { --progress-color: #b5e66a; }

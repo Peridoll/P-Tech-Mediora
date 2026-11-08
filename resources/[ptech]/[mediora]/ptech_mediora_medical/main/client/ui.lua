@@ -2,11 +2,17 @@ MedicalUI = {}
 local current
 local chartSession, chartQuery = 0, 0
 local chartsOpen = false
+local currentPatient
 local bodyNames = {
     head = '頭部', upper_body = '上半身', lower_body = '下半身',
     left_arm = '左腕', right_arm = '右腕', left_leg = '左脚', right_leg = '右脚',
 }
-local types = { shot = '銃創', stabbed = '刺創', beat = '打撲', burned = '熱傷' }
+local types = { shot = '銃創', stabbed = '切り傷', beat = '打撲', burned = '火傷', fracture = '骨折',
+    blunt = '打ち身', bruise = '打撲', cut = '切り傷', burn = '火傷', pin = '通電ピン', bleeding = '出血', starvation = '餓死', drowning = '溺死' }
+
+local function fetchCharts(targetId)
+    return lib.callback.await('ptech_mediora_medical:getPatientCharts', false, targetId)
+end
 
 local function level(value)
     if type(value) ~= 'number' or value ~= value or value < 0 or value > 4 or value % 1 ~= 0 then return nil end
@@ -15,15 +21,7 @@ end
 
 function MedicalUI.view(snapshot, description)
     local rows, keys = {}, {}
-    if type(snapshot.observedInjuries) == 'table' then
-        for _, row in ipairs(snapshot.observedInjuries) do
-            rows[#rows + 1] = {
-                body = row.kind == 'beat' and not row.part and '-' or row.body or bodyNames[row.part] or '部位未取得',
-                kind = row.kind == 'beat' and not row.part and '打撃' or types[row.kind] or row.kind,
-                severity = row.severity, bleed = row.bleed, cause = row.cause,
-            }
-        end
-    elseif type(snapshot.injuries) == 'table' then
+    if type(snapshot.injuries) == 'table' then
         for key in pairs(snapshot.injuries) do
             if #keys >= 40 then break end
             keys[#keys + 1] = key
@@ -41,17 +39,35 @@ function MedicalUI.view(snapshot, description)
             end
         end
     end
+    if snapshot.fractures then
+        for _, part in ipairs(Medical.fractureParts) do
+            local severity = snapshot.fractures[part]
+            if severity then
+                rows[#rows + 1] = { body = bodyNames[part], kind = '骨折', severity = severity, bleed = 0 }
+            end
+        end
+    end
+    if snapshot.report then
+        rows = {}
+        for _, row in ipairs(snapshot.report.rows) do
+            local value = MedicalWounds.copy(row)
+            value.body = bodyNames[row.part]
+            rows[#rows + 1] = value
+        end
+    end
     return {
-        title = snapshot.title, death = snapshot.death, training = snapshot.training == true,
-        mode = snapshot.mode or (#rows > 0 and 'ready' or snapshot.success == false and 'error' or type(snapshot.injuries) ~= 'table' and 'unknown'
-            or next(snapshot.injuries) == nil and 'empty' or #rows == 0 and 'unsupported' or 'ready'),
+        title = snapshot.title, death = snapshot.death,
+        mode = snapshot.mode or (snapshot.report and (#rows > 0 and 'ready' or 'empty')) or (snapshot.success == false and 'error' or type(snapshot.injuries) ~= 'table' and 'unknown'
+            or (next(snapshot.injuries) == nil and #rows == 0) and 'empty' or #rows == 0 and 'unsupported' or 'ready'),
         injuries = rows, details = description,
-        canRefresh = type(snapshot.refresh) == 'function', canManage = type(snapshot.manage) == 'function',
+        canRefresh = type(snapshot.refresh) == 'function',
         canOpenCharts = Medical.validId(snapshot.targetId),
     }
 end
 
 function MedicalUI.close()
+    if MedicalTreatment then MedicalTreatment.cancel() end
+    currentPatient = nil
     chartSession, chartQuery = chartSession + 1, chartQuery + 1
     chartsOpen = false
     current = nil
@@ -71,11 +87,11 @@ RegisterNUICallback('action', function(data, cb)
         end
         return
     end
-    if action ~= 'close' and action ~= 'refresh' and action ~= 'manage' then cb({ ok = false }); return end
+    if action ~= 'close' and action ~= 'refresh' then cb({ ok = false }); return end
     local snapshot = current
     MedicalUI.close()
     cb({ ok = true })
-    local fn = snapshot and (action == 'refresh' and snapshot.refresh or action == 'manage' and snapshot.manage)
+    local fn = snapshot and action == 'refresh' and snapshot.refresh
     if type(fn) == 'function' then
         CreateThread(function()
             local ok, err = pcall(fn)
@@ -96,32 +112,22 @@ function MedicalUI.show(snapshot)
     chartSession, chartQuery = chartSession + 1, chartQuery + 1
     chartsOpen = false
     local description = MedicalUI.describe(snapshot)
+    current = snapshot
     if Config.UI == 'nui' then
-        current = snapshot
         lib.hideContext(false)
         MedicalNuiSend('clinical', { action = 'open', data = MedicalUI.view(snapshot, description) })
         SetNuiFocus(true, true)
         return description
     end
     local options = {}
-    if snapshot.training then
-        options[#options + 1] = {
-            title = '訓練用NPC — 模擬データ',
-            description = 'UI確認用です。Wasabiによる診察・治療・蘇生は実行しません。',
-            icon = 'flask', readOnly = true,
-        }
-    end
     options[#options + 1] = { title = '死亡状態', description = snapshot.death, readOnly = true }
     options[#options + 1] = {
-        title = snapshot.training and '負傷情報（模擬データ）' or '負傷情報（Wasabi返却値）',
+        title = '負傷情報（Wasabi返却値）',
         description = description, readOnly = true,
     }
     options[#options + 1] = { title = '同じ対象を再診察', onSelect = snapshot.refresh }
     if Medical.validId(snapshot.targetId) then
         options[#options + 1] = { title = 'カルテ一覧', onSelect = function() MedicalUI.openCharts(snapshot.targetId) end }
-    end
-    if snapshot.training then
-        options[#options + 1] = { title = '患者の状態を変更', onSelect = snapshot.manage }
     end
     lib.registerContext({ id = 'ptech_mediora_medical:diagnosis', title = snapshot.title, options = options })
     lib.showContext('ptech_mediora_medical:diagnosis')
@@ -136,10 +142,18 @@ local function showChartContext(result, chart)
     }
     for _, injury in ipairs(chart.injuries or {}) do
         options[#options + 1] = {
-            title = (bodyNames[injury.part] or injury.part or '部位未取得') .. ' / ' .. (types[injury.kind] or injury.kind or '種類未取得'),
+            title = (injury.body or bodyNames[injury.part] or injury.part or '部位未取得') .. ' / ' .. (types[injury.kind] or injury.kind or '種類未取得'),
             description = ('重症度 %s / 出血 %s'):format(tostring(injury.severity or '未取得'), tostring(injury.bleed or '未取得')),
             readOnly = true,
         }
+    end
+    if chart.archived then
+        options[#options + 1] = { title = '治療無効 / 請求無効', readOnly = true }
+    elseif result.treatment and chart.canTreat then
+        for _, row in ipairs(result.currentInjuries or {}) do
+            options[#options + 1] = { title = '治療 / ' .. (row.body or bodyNames[row.part] or row.part) .. ' / ' .. (types[row.kind] or row.kind),
+                onSelect = function() MedicalTreatment.menu(result.patient.serverId, row.part, chart.chartId) end }
+        end
     end
     lib.registerContext({ id = 'ptech_mediora_medical:chartDetail', title = 'カルテ詳細', menu = 'ptech_mediora_medical:charts', options = options })
     lib.showContext('ptech_mediora_medical:chartDetail')
@@ -156,7 +170,7 @@ function MedicalUI.openCharts(targetId, chartId, openTreatment)
     end
     if Config.UI == 'context' then
         if not Medical.validId(targetId) then return false end
-        local fetched, result = pcall(lib.callback.await, 'ptech_mediora_medical:getPatientCharts', false, targetId)
+        local fetched, result = pcall(fetchCharts, targetId)
         if request ~= chartSession then return end
         if not fetched or not result or result.error then
             lib.notify({ title = 'カルテ', description = fetched and result and result.error or 'カルテを取得できません', type = 'error' })
@@ -180,6 +194,7 @@ function MedicalUI.openCharts(targetId, chartId, openTreatment)
         return true
     end
     chartsOpen = true
+    currentPatient = targetId
     MedicalNuiSend('clinical', { action = 'charts:open', data = { targetId = targetId, chartId = chartId, medicName = access.name, openTreatment = openTreatment } })
     SetNuiFocus(true, true)
     return true
@@ -190,14 +205,44 @@ RegisterNUICallback('getCharts', function(data, cb)
     chartQuery = chartQuery + 1
     local request, query = chartSession, chartQuery
     local targetId = type(data) == 'table' and data.targetId
-    local ok, result = pcall(lib.callback.await, 'ptech_mediora_medical:getPatientCharts', false, targetId)
+    targetId = tonumber(targetId)
+    if not Medical.validId(targetId) then cb({ error = '有効なプレイヤーIDを指定してください' }); return end
+    if MedicalTreatment then MedicalTreatment.cancel() end
+    currentPatient = targetId
+    local ok, result = pcall(fetchCharts, targetId)
     if not chartsOpen or request ~= chartSession or query ~= chartQuery then
         cb({ error = 'カルテの照会を終了しました' }); return
     end
     cb(ok and type(result) == 'table' and result or { error = 'カルテを取得できません' })
 end)
 
+local photoRequests, photoSequence = {}, 0
+
+RegisterNetEvent('ptech_mediora_medical:chartPhoto', function(request, photo)
+    if source ~= 65535 then return end
+    local pending = photoRequests[request]
+    if pending then pending(photo) end
+end)
+
+RegisterNUICallback('getChartPhoto', function(data, cb)
+    if not chartsOpen or not Medical.validId(currentPatient)
+        or type(data) ~= 'table' or type(data.chartId) ~= 'string' then cb({}); return end
+    photoSequence = photoSequence + 1
+    local request, session, query = photoSequence, chartSession, chartQuery
+    photoRequests[request] = function(photo)
+        photoRequests[request] = nil
+        local current = chartsOpen and session == chartSession and query == chartQuery
+        cb(current and photo or {})
+    end
+    SetTimeout(6000, function()
+        local pending = photoRequests[request]
+        if pending then pending() end
+    end)
+    TriggerServerEvent('ptech_mediora_medical:requestChartPhoto', currentPatient, data.chartId, request)
+end)
+
 function MedicalUI.describe(snapshot)
+    if snapshot.report then return Medical.describe(snapshot.report.rows) end
     local description = snapshot.details
     if description then
         return description
@@ -228,16 +273,19 @@ local treatmentAnimations = {
 }
 RegisterNUICallback('treatChartInjury', function(data, cb)
     if not chartsOpen or type(data) ~= 'table' then cb({ error = 'カルテを開き直してください' }); return end
-    if treatingPatient then cb({ error = 'すでに治療中です' }); return end
+    if treatingPatient or MedicalTreatment.isBusy() then cb({ error = 'すでに治療中です' }); return end
+    data.targetId = currentPatient
 
+    local token
     local function request(phase)
-        local ok, result = pcall(lib.callback.await, 'ptech_mediora_medical:treat', false,
-            data.targetId, data.chartId, data.index, phase, data.method)
+        local ok, result = pcall(lib.callback.await, 'ptech_mediora_medical:treatment:' .. phase, false,
+            phase == 'start' and data.targetId or token, data.part, data.item, data.chartId, false)
         return ok and result or { error = '治療処理に接続できませんでした' }
     end
     local session = chartSession
     treatingPatient = true
     local start = request('start')
+    token = start.token
     if not start.duration then
         treatingPatient = false
         cb(start)
@@ -253,17 +301,14 @@ RegisterNUICallback('treatChartInjury', function(data, cb)
     cb({ started = true })
     MedicalUI.close()
     local closedSession = chartSession
-    local presentation = treatmentPresentation[data.method]
+    local spec = Config.Wounds.Items[data.item]
+    local presentation = treatmentPresentation[data.method] or { label = (spec and spec.label or '道具') .. 'で処置中', animation = 'work' }
     local animation = presentation and treatmentAnimations[presentation.animation]
     if animation and not DoesAnimDictExist(animation.dict) then animation = treatmentAnimations.kneel end
     if animation and not DoesAnimDictExist(animation.dict) then animation = nil end
     if animation then RequestAnimDict(animation.dict) end
     local playing = false
-    SendNUIMessage({
-        action = 'exam-progress', duration = start.duration,
-        label = presentation and presentation.label or '治療を実行中',
-        mode = 'treatment', tool = data.method,
-    })
+    local progress = MedicalProgress.start(start.duration, presentation.label, 'treatment', data.item, start.motion)
     local ped = PlayerPedId()
     local deadline = GetGameTimer() + start.duration
     local cancelled = false
@@ -283,7 +328,7 @@ RegisterNUICallback('treatChartInjury', function(data, cb)
     end
     if playing then StopAnimTask(ped, animation.dict, animation.clip, 2.0) end
     if animation then RemoveAnimDict(animation.dict) end
-    SendNUIMessage({ action = 'exam-progress' })
+    MedicalProgress.stop(progress)
     local result = request(cancelled and 'cancel' or 'finish')
     treatingPatient = false
     lib.notify({
@@ -306,7 +351,7 @@ RegisterNUICallback('reviveChart', function(data, cb)
     MedicalUI.close()
     local session = chartSession
     local duration = 3000
-    SendNUIMessage({ action = 'exam-progress', duration = duration, label = '蘇生中', mode = 'revive' })
+    local progress = MedicalProgress.start(duration, '蘇生中', 'revive')
     local ped = PlayerPedId()
     local dict = 'mini@cpr@char_a@cpr_str'
     local clip = 'cpr_pumpchest'
@@ -331,7 +376,7 @@ RegisterNUICallback('reviveChart', function(data, cb)
     end
     if playing then StopAnimTask(ped, dict, clip, 2.0) end
     if hasAnimation then RemoveAnimDict(dict) end
-    SendNUIMessage({ action = 'exam-progress' })
+    MedicalProgress.stop(progress)
     local result
     if not cancelled then
         local ok, response = pcall(lib.callback.await, 'ptech_mediora_medical:reviveChart', false, data.targetId, data.chartId)
@@ -361,3 +406,14 @@ RegisterNUICallback('billChart', function(data, cb)
     local ok, result = pcall(lib.callback.await, 'ptech_mediora_medical:billChart', false, data.targetId, data.chartId, data.category)
     cb(ok and result or { error = '請求処理に接続できませんでした' })
 end)
+RegisterNUICallback('treat', function(data, cb)
+    if not chartsOpen or not Medical.validId(currentPatient) then cb({ error = '患者のカルテを開いてください' }); return end
+    local request, query, target = chartSession, chartQuery, currentPatient
+    local function isCurrent() return chartsOpen and request == chartSession and query == chartQuery and currentPatient == target end
+    data = type(data) == 'table' and data or {}
+    data.targetId = target
+    local ok, result = pcall(function() return MedicalTreatment.treat(data, isCurrent) end)
+    if ok and result and result.ok and isCurrent() then result.result = fetchCharts(target) end
+    cb(ok and type(result) == 'table' and result or { error = '治療に失敗しました' })
+end)
+
