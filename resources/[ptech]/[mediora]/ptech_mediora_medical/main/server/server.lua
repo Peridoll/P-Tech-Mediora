@@ -1,6 +1,9 @@
 local last = {}
 local examinations, chartsById, chartsByPatient = {}, {}, {}
 local chartSequence = 0
+local chartRunId = ('%08x%08x'):format(math.random(0, 0x7fffffff), math.random(0, 0x7fffffff))
+local chartStoreReady = false
+local pendingChartWrites, writingCharts = {}, {}
 local chartPhotoBytes = 0
 local chartReuseSeconds = 5 * 60
 
@@ -13,7 +16,7 @@ end
 function MedicalChartAccess(patientId, chartId)
     local chart = type(chartId) == 'string' and chartsById[chartId]
     return chart and chart.patientId == patientId and isLatestChart(chart)
-        and not chart.invoiceId and not chart.billing
+        and not chart.invoiceId and not chart.billing and not chart.reviving
 end
 
 local function updatePatientStatus(target, patientId)
@@ -79,6 +82,7 @@ local treatmentNames = {
     pmediora_hemostatic = '止血',
 }
 
+local manualBillingLimit = 100000000
 local reviveRates = {
     field = { label = '現場蘇生', fee = 800000 },
     hospital = { label = '院内蘇生', fee = 400000 },
@@ -156,10 +160,91 @@ local function chartSummary(chart)
         deathCause = chart.deathCause,
         revived = chart.revived,
         invoiceId = chart.invoiceId,
+        invoiceTotal = chart.invoiceTotal,
+        manualBillingLimit = manualBillingLimit,
         observationStatus = chart.observationStatus,
     }
 end
 
+
+local function flushChart(chartId)
+    if not chartStoreReady or writingCharts[chartId] then return end
+    writingCharts[chartId] = true
+    while pendingChartWrites[chartId] do
+        local row = pendingChartWrites[chartId]
+        local ok, result = pcall(MySQL.update.await, [[
+            INSERT INTO mediora_medical_charts (chart_id, patient_id, issued_at, record)
+            VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE record = VALUES(record)
+        ]], row)
+        if not ok or result == nil then
+            print('[ptech_mediora_medical] カルテのDB保存に失敗しました。再試行します。')
+            SetTimeout(5000, function() flushChart(chartId) end)
+            break
+        end
+        if pendingChartWrites[chartId] == row then pendingChartWrites[chartId] = nil end
+    end
+    writingCharts[chartId] = nil
+end
+
+if MySQL then
+    local function initializeChartStore()
+        local ok = pcall(MySQL.query.await, [[
+            CREATE TABLE IF NOT EXISTS mediora_medical_charts (
+                chart_id VARCHAR(80) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+                patient_id VARCHAR(64) NOT NULL,
+                issued_at BIGINT UNSIGNED NOT NULL,
+                record LONGTEXT NOT NULL,
+                INDEX medical_patient_date (patient_id, issued_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ]])
+        local readable, rows = pcall(MySQL.query.await, 'SELECT chart_id FROM mediora_medical_charts LIMIT 0')
+        if not ok or not readable or type(rows) ~= 'table' then
+            print('[ptech_mediora_medical] カルテDBの初期化を確認できません。再試行します。')
+            SetTimeout(10000, initializeChartStore)
+            return
+        end
+        chartStoreReady = true
+        print('[ptech_mediora_medical] カルテDBを確認しました。')
+        for chartId in pairs(pendingChartWrites) do flushChart(chartId) end
+    end
+    MySQL.ready(initializeChartStore)
+end
+
+local function saveChart(chart)
+    if not MySQL then return end
+    local record = chartSummary(chart)
+    record.currentInjuries = chart.closedRows or chart.observedRows
+    record.archived, record.canTreat, record.hasPhoto = true, false, false
+    for index, injury in ipairs(record.injuries) do
+        local treated = true
+        for _, row in ipairs(record.currentInjuries) do
+            if row.part == injury.part and row.kind == injury.kind then treated = false; break end
+        end
+        record.treated[tostring(index)] = treated or nil
+    end
+    pendingChartWrites[chart.chartId] = { chart.chartId, chart.patientId, chart.createdAt, json.encode(record) }
+    flushChart(chart.chartId)
+end
+
+local function historicalCharts(patientId)
+    if not MySQL then return {} end
+    if not chartStoreReady then return nil end
+    local ok, rows = pcall(MySQL.query.await, [[
+        SELECT chart_id, record FROM mediora_medical_charts
+        WHERE patient_id = ? ORDER BY issued_at DESC, chart_id DESC
+    ]], { patientId })
+    if not ok or type(rows) ~= 'table' then return nil end
+    local records = {}
+    for _, row in ipairs(rows) do
+        if not chartsById[row.chart_id] then
+            local decoded, record = pcall(json.decode, row.record)
+            if decoded and type(record) == 'table' and record.chartId == row.chart_id then
+                records[#records + 1] = record
+            end
+        end
+    end
+    return records
+end
 
 local function inspect(src, target)
     if type(target) ~= 'number' or target ~= target or target % 1 ~= 0 or target <= 0 or target == src then
@@ -264,8 +349,6 @@ AddEventHandler('playerDropped', function()
     for _, medic in ipairs(affected) do endExamination(medic) end
 end)
 
--- The chart store is intentionally process-local. It is shared by permitted
--- on-duty medics during this server run and is cleared when the resource stops.
 lib.callback.register('ptech_mediora_medical:createChart', function(src, target)
     local exam = examinations[src]
     if not exam or exam.target ~= target or not exam.startedAt
@@ -317,6 +400,7 @@ lib.callback.register('ptech_mediora_medical:createChart', function(src, target)
             previous.death = result.death
             if observation.cause then previous.deathCause = observation.cause end
             previous.targetId = target
+            saveChart(previous)
             return { chart = chartSummary(previous) }
         end
         if MedicalWoundServer and MedicalWoundServer.busy(target) then
@@ -325,7 +409,7 @@ lib.callback.register('ptech_mediora_medical:createChart', function(src, target)
         previous.closedRows = previous.observedRows
     end
     chartSequence = chartSequence + 1
-    local id = ('%s-%s-%s'):format(os.time(), src, chartSequence)
+    local id = ('%s-%s-%s-%s'):format(now, src, chartSequence, chartRunId)
     local chart = {
         chartId = id, patientId = patient.PlayerData.citizenid,
         patientName = identity(patient.PlayerData), examinerId = medic.PlayerData.citizenid,
@@ -343,6 +427,7 @@ lib.callback.register('ptech_mediora_medical:createChart', function(src, target)
     if Config.Examination.ChartPhoto and GetResourceState('screenshot-basic') == 'started' then
         chart.capture = { source = src, deadline = GetGameTimer() + 8000 }
     end
+    saveChart(chart)
     return { chart = chartSummary(chart), capturePhoto = chart.capture ~= nil }
 end)
 
@@ -404,27 +489,52 @@ end)
 
 -- EMSManager uses these read-only callbacks. The server remains the authority for
 -- job and duty checks; the client only supplies the online target server ID.
-lib.callback.register('ptech_mediora_medical:managerAccess', function(src)
+lib.callback.register('ptech_mediora_medical:managerAccess', function(src, includePatients)
     local player, error = allowedMedic(src)
     if not player then return { error = error } end
-    return { name = identity(player.PlayerData) }
+    local access = { name = identity(player.PlayerData) }
+    if includePatients == true then
+        access.patients = {}
+        for _, source in ipairs(GetPlayers()) do
+            local target = tonumber(source)
+            local patient = target and exports.qbx_core:GetPlayer(target)
+            if patient then
+                access.patients[#access.patients + 1] = { id = target, name = identity(patient.PlayerData) }
+            end
+        end
+        table.sort(access.patients, function(a, b) return a.id < b.id end)
+    end
+    return access
 end)
 
 lib.callback.register('ptech_mediora_medical:getPatientCharts', function(src, target)
-    local _, error = allowedMedic(src)
+    local medic, error = allowedMedic(src)
     if error then return { error = error } end
+    local medicId = medic.PlayerData.citizenid
     target = tonumber(target)
     if not target or target % 1 ~= 0 or target <= 0 then return { error = '患者IDには数字を入力してください' } end
     local patient = exports.qbx_core:GetPlayer(target)
     if not patient then return { error = 'そのIDのプレイヤーは現在接続していません' } end
     local patientId = patient.PlayerData.citizenid
+    local history = historicalCharts(patientId)
+    local currentMedic, currentError = allowedMedic(src)
+    if not currentMedic or currentMedic.PlayerData.citizenid ~= medicId then
+        return { error = currentError or '勤務状態を確認してください' }
+    end
+    patient = exports.qbx_core:GetPlayer(target)
+    if not patient or patient.PlayerData.citizenid ~= patientId then return { error = '対象患者が変わりました' } end
     local canReceiveIV = MedicalWoundServer and MedicalWoundServer.canReceiveIV(target)
     local records, ids = {}, chartsByPatient[patientId] or {}
+    local savePending = false
     for _, chartId in ipairs(ids) do
         local chart = chartsById[chartId]
         if chart then records[#records + 1] = chartSummary(chart) end
+        if pendingChartWrites[chartId] then savePending = true end
     end
+    for _, record in ipairs(history or {}) do records[#records + 1] = record end
     local result = {
+        historyUnavailable = history == nil,
+        savePending = savePending,
         patient = { serverId = target, citizenId = patientId, name = identity(patient.PlayerData) },
         charts = records,
         vitals = (function()
@@ -466,7 +576,8 @@ lib.callback.register('ptech_mediora_medical:reviveChart', function(src, target,
     if current.citizenId ~= patientId or not history or history[1] ~= chartId then
         return { error = '最新のカルテで患者の状態を確認してください' }
     end
-    if #MedicalWounds.rows(current.state) > 0 then return { error = '先にすべての傷と出血を治療してください' } end
+    if current.state.ivCondition then return { error = '餓死・溺死の患者には先に点滴を使用してください' } end
+    if MedicalWoundServer.busy(target) then return { error = '治療の完了後に蘇生してください' } end
     local chart = chartsById[chartId]
     if chart.invoiceId or chart.billing then return { error = '蘇生には未請求の最新カルテを使用してください' } end
     if chart.reviving then return { error = 'すでに蘇生中です' } end
@@ -482,6 +593,7 @@ lib.callback.register('ptech_mediora_medical:reviveChart', function(src, target,
                 chart.reviving = nil
                 chart.revived = true
                 MedicalWoundServer.updateDeath(target)
+                saveChart(chart)
                 return { ok = true }
             end
         end
@@ -490,7 +602,7 @@ lib.callback.register('ptech_mediora_medical:reviveChart', function(src, target,
     return { error = '蘇生の完了を確認できませんでした' }
 end)
 
-lib.callback.register('ptech_mediora_medical:billChart', function(src, target, chartId, category)
+lib.callback.register('ptech_mediora_medical:billChart', function(src, target, chartId, category, manualAmount)
     local medic, error = allowedMedic(src)
     if not medic then return { error = error } end
     if not Medical.validId(target) or target == src or type(chartId) ~= 'string' then
@@ -506,12 +618,23 @@ lib.callback.register('ptech_mediora_medical:billChart', function(src, target, c
     if chart.billing then return { error = '請求を送信中です' } end
     if MedicalWoundServer.busy(target) then return { error = '処置が終わってから請求してください' } end
     if chart.reviving then return { error = '蘇生処理の完了後に請求してください' } end
-    local rate = type(category) == 'string' and reviveRates[category]
-    if chart.revived and not rate then return { error = '蘇生区分を選んでください' } end
-    if not chart.revived then rate = nil end
     local summary = chartSummary(chart)
-    if summary.unpriced then return { error = '単価が未設定の道具があります。単価を設定してから請求してください' } end
-    local total = summary.totalCharge + (rate and rate.fee or 0)
+    if #summary.charges == 0 and not summary.unpriced and not chart.revived then
+        return { error = '請求する費用がありません' }
+    end
+    local rate, total
+    if manualAmount ~= nil then
+        if type(manualAmount) ~= 'number' or manualAmount % 1 ~= 0
+            or manualAmount < 1 or manualAmount > manualBillingLimit then
+            return { error = ('請求額は1円から%d円までの整数で入力してください'):format(manualBillingLimit) }
+        end
+        total = manualAmount
+    else
+        rate = chart.revived and type(category) == 'string' and reviveRates[category]
+        if chart.revived and not rate then return { error = '蘇生区分を選んでください' } end
+        if summary.unpriced then return { error = '単価が未設定の道具があります。金額を手入力してください' } end
+        total = summary.totalCharge + (rate and rate.fee or 0)
+    end
     if total <= 0 then return { error = '請求する費用がありません' } end
     if GetResourceState('okokBilling') ~= 'started' or GetResourceState('oxmysql') ~= 'started' then
         return { error = '請求システムを利用できません' }
@@ -522,6 +645,8 @@ lib.callback.register('ptech_mediora_medical:billChart', function(src, target, c
     for _, line in ipairs(summary.treatmentCharges) do
         notes[#notes + 1] = line.siteCount > 0 and ('%s %dか所'):format(line.label, line.siteCount) or line.label
     end
+    if manualAmount ~= nil then notes[#notes + 1] = ('手入力 %d円'):format(total) end
+    if rate then notes[#notes + 1] = rate.label end
     chart.billing = true
     local ok, invoiceId = pcall(function()
         return exports.oxmysql:insert_async([[
@@ -541,7 +666,9 @@ lib.callback.register('ptech_mediora_medical:billChart', function(src, target, c
         return { error = '請求を作成できませんでした。医療職の入金口座を確認してください' }
     end
     chart.invoiceId = invoiceId
+    chart.invoiceTotal = total
     chart.reviveCategory = rate and category or nil
+    saveChart(chart)
     local current = exports.qbx_core:GetPlayer(target)
     if current and current.PlayerData.citizenid == chart.patientId then
         TriggerClientEvent('ox_lib:notify', target, {
@@ -624,5 +751,6 @@ function MedicalRecordTreatment(target, chartId, item, count, part)
             sites[part] = true
             chart.treatmentSites[item] = sites
         end
+        saveChart(chart)
     end
 end

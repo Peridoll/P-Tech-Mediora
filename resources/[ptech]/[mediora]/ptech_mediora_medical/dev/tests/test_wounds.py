@@ -45,8 +45,29 @@ class ModelTest(unittest.TestCase):
     def test_bruise_floor_applies_to_halving_and_decay(self):
         self.check("p.wounds.bruise=true;p.blunt=40;p.sharp=20;W.medication(s,false);assert(p.blunt==30 and p.sharp==10);W.decay(s,100);assert(p.blunt==30 and p.sharp==0 and p.wounds.bruise)")
 
-    def test_full_medication_cures_minor_wounds_without_curing_bruise_bone_or_bullet(self):
-        self.check("p.wounds={blunt=true,cut=true,bruise=true,shot=true,burn=true};p.blunt=70;p.fracture='active';W.medication(s,true);assert(not p.wounds.blunt and not p.wounds.cut);assert(p.wounds.bruise and p.wounds.shot and p.wounds.burn and p.fracture=='active')")
+    def test_full_medication_starts_blunt_recovery_and_still_cures_cuts(self):
+        self.check('''
+        os.time=function() return 1000 end
+        p.wounds={blunt=true,cut=true,shot=true,burn=true}
+        p.fracture='active'
+        s.parts.head.wounds.bruise=true
+        W.medication(s,false)
+        assert(p.wounds.blunt and not p.bluntRecoveryAt)
+        W.medication(s,true)
+        assert(p.wounds.blunt and not p.wounds.cut)
+        assert(not W.expireBlunt(s,1899) and p.wounds.blunt)
+        assert(W.expireBlunt(s,1900) and not p.wounds.blunt)
+        assert(p.wounds.shot and p.wounds.burn and p.fracture=='active' and s.parts.head.wounds.bruise)
+        ''')
+
+    def test_new_blunt_hit_restarts_requirement_for_full_health(self):
+        self.check('''
+        W.damage(s,'right_leg','blunt',5,false,miss)
+        W.medication(s,true)
+        local deadline=p.bluntRecoveryAt
+        W.damage(s,'right_leg','blunt',1,false,miss)
+        assert(not W.expireBlunt(s,deadline) and p.wounds.blunt and not p.bluntRecoveryAt)
+        ''')
 
     def test_cut_and_bruise_thresholds_and_required_counts(self):
         self.check('''
@@ -358,7 +379,7 @@ class ServerTest(unittest.TestCase):
         clock=clock+confirmation.duration
         local chart=invoke('createChart',1,3).chart
         assert(chart.deathCause=='溺死' and #chart.injuries==1 and chart.injuries[1].kind=='drowning')
-        assert(invoke('reviveChart',1,3,chart.chartId).error=='先にすべての傷と出血を治療してください')
+        assert(invoke('reviveChart',1,3,chart.chartId).error=='餓死・溺死の患者には先に点滴を使用してください')
         assert(finish(start('pmediora_ivdrip','upper_body',1,3,chart.chartId)).ok and writes==1)
         assert(data.metadata.hunger==47 and data.metadata.thirst==55 and data.metadata.stress==65)
         damage(3,'drowning',0)
@@ -367,6 +388,72 @@ class ServerTest(unittest.TestCase):
         assert(result.charts[1].treated['1'] and result.charts[1].deathCause=='溺死')
         assert(start('pmediora_ivdrip','upper_body',1,3,chart.chartId).error)
         """)
+
+    def test_persisted_chart_restores_read_only_after_resource_restart(self):
+        self.check('''
+        local storage={}
+        json={
+            encode=function(record) return MedicalWounds.copy(record) end,
+            decode=function(record) return MedicalWounds.copy(record) end,
+        }
+        MySQL={
+            ready=function(fn) fn() end,
+            query={await=function(sql, args)
+                if not args then return {} end
+                local records={}
+                for id, row in pairs(storage) do
+                    if row[2]==args[1] then records[#records+1]={chart_id=id,record=row[4]} end
+                end
+                return records
+            end},
+            update={await=function(sql, row) storage[row[1]]=row;return 1 end},
+        }
+        ''')
+        source = (ROOT/'main/server/server.lua').read_text(encoding='utf-8')
+        self.lua.execute(source)
+        self.check('''
+        clock=clock+Config.Cooldown
+        chartId=makeChart()
+        assert(finish(start('pmediora_icepack')).ok)
+        assert(invoke('getPatientCharts',1,2).charts[1].archived==false)
+        ''')
+        self.lua.execute(source)
+        self.check('''
+        local restored=invoke('getPatientCharts',1,2).charts[1]
+        assert(restored.chartId==chartId and restored.archived and not restored.canTreat)
+        assert(restored.totalCharge==500000 and restored.treatmentCharges[1].siteCount==1)
+        assert(#restored.currentInjuries==1 and restored.currentInjuries[1].kind=='fracture')
+        assert(invoke('billChart',1,2,chartId).error)
+        ''')
+
+    def test_manual_invoice_validates_total_and_preserves_treatment_charges(self):
+        self.check('''
+        assert(invoke('billChart',1,2,chartId,nil,125000).error)
+        assert(finish(start('pmediora_icepack')).ok)
+        local resourceState=GetResourceState
+        GetResourceState=function(name)
+            if name=='okokBilling' or name=='oxmysql' then return 'started' end
+            return resourceState(name)
+        end
+        local saved
+        exports.oxmysql={insert_async=function(_,sql,values) saved=values;return 17 end}
+        for _, amount in ipairs({0, -1, 1.5, 100000001, '125000'}) do
+            assert(invoke('billChart',1,2,chartId,nil,amount).error and not saved)
+        end
+        assert(invoke('billChart',1,2,chartId,nil,125000).ok)
+        assert(saved[7]==125000 and saved[8]:find('125000'))
+        local chart=invoke('getPatientCharts',1,2).charts[1]
+        assert(chart.invoiceTotal==125000 and chart.totalCharge==500000)
+        ''')
+
+    def test_trauma_can_be_revived_and_treated_afterward(self):
+        self.check('''
+        deadFlags[2]=true
+        exports.wasabi_ambulance={RevivePlayer=function(_,target) deadFlags[target]=false end}
+        assert(invoke('reviveChart',1,2,chartId).ok)
+        assert(state().parts.right_leg.wounds.bruise)
+        assert(finish(start('pmediora_icepack')).ok)
+        ''')
 
     def test_no_full_health_or_dead_kit_consumption(self):
         self.check("stock.pmediora_firstaidkit=2;assert(invoke('treatment:start',2,2,'head','pmediora_firstaidkit',nil,true).error);players[2].PlayerData.metadata.isdead=true;healths[2]=100;assert(invoke('treatment:start',1,2,'head','pmediora_firstaidkit',chartId).error and writes==0)")
@@ -498,6 +585,8 @@ class NativeFlowTest(unittest.TestCase):
 
     def test_current_tablet_treatment_reopens_and_records_actual_quantity(self):
         self.check('''
+        players[2].PlayerData.metadata.isdead=true
+        healths[2]=100
         diagnose()
         local chart=nui('getCharts',{targetId=2}).charts[1]
         local result=nui('treatChartInjury',{targetId=3,part='right_leg',item='pmediora_icepack',chartId=chart.chartId})

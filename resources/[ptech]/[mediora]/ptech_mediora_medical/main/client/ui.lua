@@ -148,7 +148,9 @@ local function showChartContext(result, chart)
         }
     end
     if chart.archived then
-        options[#options + 1] = { title = '治療無効 / 請求無効', readOnly = true }
+        local treatment = #(chart.currentInjuries or chart.injuries or {}) == 0 and '治療済' or '治療無効'
+        local billing = chart.invoiceId and '請求済' or '請求無効'
+        options[#options + 1] = { title = treatment .. ' / ' .. billing, readOnly = true }
     elseif result.treatment and chart.canTreat then
         for _, row in ipairs(result.currentInjuries or {}) do
             options[#options + 1] = { title = '治療 / ' .. (row.body or bodyNames[row.part] or row.part) .. ' / ' .. (types[row.kind] or row.kind),
@@ -162,14 +164,13 @@ end
 function MedicalUI.openCharts(targetId, chartId, openTreatment)
     MedicalUI.close()
     local request = chartSession
-    local ok, access = pcall(lib.callback.await, 'ptech_mediora_medical:managerAccess', false)
+    local ok, access = pcall(lib.callback.await, 'ptech_mediora_medical:managerAccess', false, true)
     if request ~= chartSession then return end
     if not ok or not access or access.error then
         lib.notify({ title = 'カルテ', description = ok and access and access.error or 'カルテを開けません', type = 'error' })
         return false
     end
-    if Config.UI == 'context' then
-        if not Medical.validId(targetId) then return false end
+    if Config.UI == 'context' and Medical.validId(targetId) then
         local fetched, result = pcall(fetchCharts, targetId)
         if request ~= chartSession then return end
         if not fetched or not result or result.error then
@@ -195,7 +196,7 @@ function MedicalUI.openCharts(targetId, chartId, openTreatment)
     end
     chartsOpen = true
     currentPatient = targetId
-    MedicalNuiSend('clinical', { action = 'charts:open', data = { targetId = targetId, chartId = chartId, medicName = access.name, openTreatment = openTreatment } })
+    MedicalNuiSend('clinical', { action = 'charts:open', data = { targetId = targetId, chartId = chartId, medicName = access.name, patients = access.patients, openTreatment = openTreatment } })
     SetNuiFocus(true, true)
     return true
 end
@@ -403,7 +404,7 @@ RegisterNetEvent('ptech_mediora_medical:restoreHealth', function(fraction)
 end)
 RegisterNUICallback('billChart', function(data, cb)
     if not chartsOpen or type(data) ~= 'table' then cb({ error = 'カルテを開き直してください' }); return end
-    local ok, result = pcall(lib.callback.await, 'ptech_mediora_medical:billChart', false, data.targetId, data.chartId, data.category)
+    local ok, result = pcall(lib.callback.await, 'ptech_mediora_medical:billChart', false, data.targetId, data.chartId, data.category, data.manualAmount)
     cb(ok and result or { error = '請求処理に接続できませんでした' })
 end)
 RegisterNUICallback('treat', function(data, cb)

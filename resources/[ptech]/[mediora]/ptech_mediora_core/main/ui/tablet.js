@@ -49,12 +49,14 @@
     let page = 'home';
     let chartRequest = 0;
     let charts = [];
+    let chartTargetId;
     const chartParts = { head: '頭部', upper_body: '上半身', lower_body: '下半身', left_arm: '左腕', right_arm: '右腕', left_leg: '左脚', right_leg: '右脚' };
     const injuryKinds = { blunt: '打ち身', bruise: '打撲', cut: '切り傷', burn: '火傷', fracture: '骨折', bleeding: '出血', shot: '銃創', stabbed: '刺創', beat: '打撲', burned: '火傷', pin: '通電ピン' };
     const injuryLevels = ['なし', '軽度', '中等度', '高度', '最重度'];
 
     function clearChartResults() {
         charts = [];
+        chartTargetId = undefined;
         element('chart-results').hidden = true;
         element('chart-patient').textContent = '';
         element('chart-history').replaceChildren();
@@ -111,6 +113,8 @@
                 element('chart-status').textContent = `${patient}のカルテはありません。`;
                 return;
             }
+            chartTargetId = targetId;
+            element('chart-open').disabled = false;
             element('chart-patient').textContent = `${patient}（ID ${targetId}）`;
             const history = element('chart-history');
             for (const chart of charts) {
@@ -128,6 +132,33 @@
             if (version === chartRequest) element('chart-status').textContent = 'カルテを取得できませんでした。';
         } finally {
             if (version === chartRequest) element('chart-submit').disabled = false;
+        }
+    }
+    async function openSelectedChart() {
+        const button = element('chart-open');
+        const chart = charts[element('chart-history').selectedIndex];
+        if (!opened || page !== 'charts' || button.disabled || !chart?.chartId) return;
+        button.disabled = true;
+        const version = chartRequest;
+        try {
+            const result = await post('tabletOpenChart', { targetId: chartTargetId, chartId: chart.chartId });
+            if (!result.ok) throw new Error(result.error || 'カルテを開けませんでした。');
+        } catch (error) {
+            if (version === chartRequest) element('chart-status').textContent = error.message || 'カルテを開けませんでした。';
+        } finally {
+            if (version === chartRequest) button.disabled = false;
+        }
+    }
+    async function openChartPage() {
+        selectPage('charts');
+        if (preview || !opened) return;
+        const version = chartRequest;
+        element('chart-status').textContent = 'カルテ画面を開いています…';
+        try {
+            const result = await post('tabletOpenChart');
+            if (!result.ok) throw new Error(result.error || 'カルテを開けませんでした。');
+        } catch (error) {
+            if (version === chartRequest) element('chart-status').textContent = error.message;
         }
     }
     let isAdmin = false;
@@ -350,18 +381,86 @@
         }
     });
 
+    let homeRequest = 0;
+    function resetHome() {
+        homeRequest++;
+        element('home-overview').hidden = true;
+        element('home-roster').hidden = true;
+        element('home-duty').setAttribute('aria-expanded', 'false');
+        element('home-count').textContent = '—';
+        element('home-notices').replaceChildren();
+        element('home-roster-list').replaceChildren();
+        element('home-status').textContent = '';
+    }
+    async function loadHome(roster = false) {
+        const version = ++homeRequest;
+        const isCurrent = () => opened && page === 'home' && version === homeRequest;
+        const notice = element(roster ? 'home-roster-status' : 'home-status');
+        notice.textContent = roster ? '隊員を確認しています…' : '院内情報を確認しています…';
+        try {
+            const result = preview ? { ok: true, count: 0, roster: [], announcements: [] } : await post('tabletHome', { roster });
+            if (!isCurrent()) return;
+            if (!result.ok) throw new Error(result.error || '院内情報を取得できませんでした。');
+            element('home-count').textContent = result.count;
+            notice.textContent = '';
+            if (roster) {
+                const list = element('home-roster-list');
+                list.replaceChildren();
+                for (const medic of Array.isArray(result.roster) ? result.roster : []) {
+                    const row = document.createElement('li');
+                    const name = document.createElement('span');
+                    const grade = document.createElement('small');
+                    name.textContent = medic.name;
+                    grade.textContent = medic.grade;
+                    row.append(name, grade);
+                    list.append(row);
+                }
+                if (!list.childElementCount) notice.textContent = '勤務中の隊員はいません。';
+            } else {
+                const notices = element('home-notices');
+                notices.replaceChildren();
+                for (const announcement of Array.isArray(result.announcements) ? result.announcements : []) {
+                    const entry = document.createElement('details');
+                    const title = document.createElement('summary');
+                    const body = document.createElement('p');
+                    title.textContent = announcement.title;
+                    body.textContent = announcement.body;
+                    entry.append(title, body);
+                    notices.append(entry);
+                }
+                element('home-notices-empty').hidden = notices.childElementCount > 0;
+                element('home-overview').hidden = false;
+            }
+        } catch (error) {
+            if (!isCurrent()) return;
+            notice.textContent = error.message || '院内情報を取得できませんでした。';
+            if (roster) element('home-roster-list').replaceChildren();
+        }
+    }
+    element('home-duty').addEventListener('click', () => {
+        const details = element('home-roster');
+        const open = details.hidden;
+        details.hidden = !open;
+        element('home-duty').setAttribute('aria-expanded', String(open));
+        element('home-roster-list').replaceChildren();
+        if (open) loadHome(true);
+        else homeRequest++;
+    });
+
     function selectPage(next) {
         if (!['home', 'charts', 'shop', 'settings', 'resources'].includes(next)) return;
         if (next === 'resources' && !isAdmin) return;
         if (next !== page && (page === 'charts' || next === 'charts')) resetCharts();
+        if (page === 'home' || next === 'home') resetHome();
         page = next;
         for (const id of ['home', 'charts', 'shop', 'settings', 'resources']) element(id).hidden = id !== page;
-        element('admin-link').hidden = !isAdmin || !['settings', 'resources'].includes(page);
+        element('admin-link').hidden = !isAdmin;
         document.querySelectorAll('[data-page]').forEach((button) => {
             const selected = button.dataset.page === page;
             button.classList.toggle('selected', selected);
             button.setAttribute('aria-current', selected ? 'page' : 'false');
         });
+        if (page === 'home') loadHome();
         if (page === 'shop') loadShop();
         if (page === 'resources') refreshResources();
         if (page === 'settings') loadAccess(request);
@@ -372,7 +471,7 @@
             if (!opened || version !== request) return;
             if (!result.ok) throw new Error(result.error || 'unavailable');
             isAdmin = result.ok === true && result.admin === true;
-            element('admin-link').hidden = !isAdmin || !['settings', 'resources'].includes(page);
+            element('admin-link').hidden = !isAdmin;
         } catch {
             if (opened && version === request) {
                 isAdmin = false;
@@ -489,6 +588,7 @@
         animateTablet(visible);
         const version = ++request;
         resetCharts();
+        if (!visible) resetHome();
         busy = false;
         operating = false;
         element('resource-status').dataset.phase = '';
@@ -520,11 +620,15 @@
             else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
         }
     });
-    document.querySelectorAll('[data-page]').forEach((button) => button.addEventListener('click', () => selectPage(button.dataset.page)));
+    document.querySelectorAll('[data-page]').forEach((button) => button.addEventListener('click', () => {
+        if (button.dataset.page === 'charts') openChartPage();
+        else selectPage(button.dataset.page);
+    }));
     element('refresh').addEventListener('click', () => { status(''); refreshResources(); });
     element('home-button').addEventListener('click', close);
     element('chart-search').addEventListener('submit', searchCharts);
     element('chart-history').addEventListener('change', showChart);
+    element('chart-open').addEventListener('click', openSelectedChart);
     element('progress-theme').addEventListener('change', async (event) => {
         const select = event.currentTarget;
         const version = request;

@@ -94,11 +94,13 @@ _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 Config.Economy = {
   moneyType                 = 'cash', -- 使用する通貨の種類（'cash' または 'bank'）
   maxTransactionItems       = 100,    -- 1回の取引で扱える最大アイテム数
-  unopenedBoxSellMultiplier = 1.20,   -- 未開封の段ボールの売却倍率
+  counterBuyMultiplier       = 1.20,   -- 窓口販売価格。タブレット注文は基準価格
+  unopenedBoxSellMultiplier  = 0.20,   -- 未開封の通常回収箱。中身の道具の売値合計に掛ける
+  specialBoxBaseMultiplier   = 1.20,   -- 特注段ボールの従来の基準倍率
   specialBoxSellMultiplier  = 1.50,   -- 作成当日・指定納品先での特注ボーナス倍率（翌日は失効）
   tradeHospitalId           = 'pillbox', -- 医療道具を購入・売却できる病院のID（ピルボックス限定）
   fullServiceHospitalId     = 'pillbox', -- クラフトなど納品以外の機能を利用できる病院のID
-  dailyHospitalMultiplier   = {      -- 病院別・日替わり納品倍率（通常・特注両方に適用）
+  dailyHospitalMultiplier   = {      -- 病院別・日替わり納品倍率（特注段ボールに適用）
     min  = 0.80,                     -- 倍率の最低値（仮の初期値。運営で変更可）
     max  = 1.60,                     -- 倍率の最高値（仮の初期値。運営で変更可）
     step = 0.05,                     -- 倍率の変化刻み幅

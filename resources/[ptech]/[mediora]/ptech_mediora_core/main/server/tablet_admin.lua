@@ -16,6 +16,37 @@ lib.callback.register('ptech_mediora_core:tabletAccess', function(source)
     return { ok = true, admin = isAdmin(source) }
 end)
 
+lib.callback.register('ptech_mediora_core:tabletHome', function(source, request)
+    if not hasTablet(source) then return { ok = false, error = '医療端末を所持していません。' } end
+    local jobs = Config.DutyTracking.jobs
+    local viewer = exports.qbx_core:GetPlayer(source)
+    local viewerJob = viewer and viewer.PlayerData.job
+    if not viewerJob or not jobs[viewerJob.name] then
+        return { ok = false, error = '院内情報は医療職のみ確認できます。' }
+    end
+
+    local includeRoster = type(request) == 'table' and request.roster == true
+    local count, roster = 0, {}
+    for _, playerId in ipairs(GetPlayers()) do
+        local player = exports.qbx_core:GetPlayer(tonumber(playerId))
+        local data = player and player.PlayerData
+        local job = data and data.job
+        if job and jobs[job.name] and job.onduty == true then
+            count = count + 1
+            if includeRoster then
+                local info = data.charinfo or {}
+                local name = ((info.firstname or '') .. ' ' .. (info.lastname or '')):match('^%s*(.-)%s*$')
+                roster[#roster + 1] = {
+                    name = name ~= '' and name or '氏名未登録',
+                    grade = job.grade and job.grade.name or '階級未登録',
+                }
+            end
+        end
+    end
+    table.sort(roster, function(a, b) return a.name < b.name end)
+    return { ok = true, count = count, roster = includeRoster and roster or nil, announcements = Config.Tablet.HomeAnnouncements or {} }
+end)
+
 local resourceLocks = {}
 local operations = {}
 local lifecycle = {}

@@ -3,7 +3,7 @@
 
 local floats, floatProps, revisions = {}, {}, {}
 local floatTicket, floatX, floatY, floatZ, blockedTicket, using = nil, nil, nil, nil, nil, false
-local obstacleCheckAt = 0
+local obstacleCheckAt, obstacleProbe, ascentObstructed = 0, nil, false
 local deathStarted, holdStarted, activationErrorUntil = nil, nil, 0
 local floatUi
 
@@ -192,7 +192,7 @@ local function reset()
     clearFloatProps()
     floats, revisions = {}, {}
     floatTicket, floatX, floatY, floatZ, blockedTicket = nil, nil, nil, nil, nil
-    obstacleCheckAt = 0
+    obstacleCheckAt, obstacleProbe, ascentObstructed = 0, nil, false
     using = false
     deathStarted, holdStarted, activationErrorUntil = nil, nil, 0
     floatUi = nil
@@ -227,16 +227,13 @@ local function capsuleBlocked(x1, y1, z1, x2, y2, z2, ped)
 end
 
 local function findAscentRoute(ped, x, y, z, surface)
-    local origin = GetEntityCoords(ped)
-    if not capsuleBlocked(x, y, z, x, y, surface - 0.25, ped) then return x, y end
-
     -- 近い順に水平方向の退避路を探し、そこから水面までの縦道が空いている場所を選ぶ。
     for _, radius in ipairs({ 2.0, 4.0, 6.0, 8.0 }) do
         for direction = 0, 7 do
             local angle = direction * math.pi / 4
             local candidateX = x + math.cos(angle) * radius
             local candidateY = y + math.sin(angle) * radius
-            local horizontalClear = not capsuleBlocked(origin.x, origin.y, z,
+            local horizontalClear = not capsuleBlocked(x, y, z,
                 candidateX, candidateY, z, ped)
             local verticalClear = horizontalClear and not capsuleBlocked(candidateX, candidateY, z,
                 candidateX, candidateY, surface - 0.25, ped)
@@ -244,6 +241,57 @@ local function findAscentRoute(ped, x, y, z, surface)
         end
     end
     return nil
+end
+
+local function checkAscentRoute(own, ped, float, z)
+    local probe = {}
+    obstacleProbe = probe
+    obstacleCheckAt = GetGameTimer() + 750
+
+    local function currentFloat()
+        local current = floats[own]
+        if obstacleProbe == probe and current and current.ticket == float.ticket and blockedTicket ~= float.ticket
+            and current.x == float.x and current.y == float.y and current.surface == float.surface
+            and PlayerPedId() == ped and not IsPedInAnyVehicle(ped, false)
+            and not Marine.busy(LocalPlayer.state) and not IsEntityAttached(ped)
+            and floatZ < current.surface - 0.5 then
+            return current
+        end
+    end
+
+    local function reportRoute(x, y, blocked)
+        local ok, accepted = pcall(lib.callback.await, 'ptech_mediora_marine:reportFlotationObstacle',
+            false, float.ticket, { x = x, y = y, z = floatZ, blocked = blocked })
+        return ok and accepted
+    end
+
+    CreateThread(function()
+        local blocked = capsuleBlocked(float.x, float.y, z, float.x, float.y, float.surface - 0.25, ped)
+        local current = currentFloat()
+        local retry = false
+        if current then
+            ascentObstructed = blocked
+            if blocked then
+                -- 迂回路を探す前にサーバー側の上昇も止める。
+                if current.blocked or reportRoute(float.x, float.y, true) then
+                    if currentFloat() then
+                        local routeX, routeY = findAscentRoute(ped, float.x, float.y, floatZ, float.surface)
+                        if currentFloat() then
+                            retry = not routeX or not reportRoute(routeX, routeY, false)
+                        end
+                    end
+                else
+                    retry = true
+                end
+            elseif current.blocked then
+                retry = not reportRoute(float.x, float.y, false)
+            end
+        end
+        if obstacleProbe == probe then
+            obstacleProbe = nil
+            if retry then obstacleCheckAt = GetGameTimer() + 3000 end
+        end
+    end)
 end
 
 CreateThread(function()
@@ -304,50 +352,41 @@ end)
 
 CreateThread(function()
     while true do
+        Wait(next(floats) ~= nil and 0 or 250)
         local own, ped = GetPlayerServerId(PlayerId()), PlayerPedId()
         local float = floats[own]
-        Wait((float ~= nil or next(floats) ~= nil) and 0 or 250)
         if float then
             if not IsPedInAnyVehicle(ped, false) then
                 if floatTicket ~= float.ticket then
                     local coords = GetEntityCoords(ped)
                     floatTicket, floatX, floatY, floatZ, blockedTicket =
                         float.ticket, coords.x, coords.y, coords.z, nil
-                    obstacleCheckAt = 0
+                    obstacleCheckAt, obstacleProbe, ascentObstructed = 0, nil, false
                 end
                 -- Escortのattachが始まった時点で制御権を譲り、同じticketで再開しない。
                 if Marine.busy(LocalPlayer.state) or IsEntityAttached(ped) then blockedTicket = float.ticket end
                 if blockedTicket ~= float.ticket then
-                    if GetGameTimer() >= obstacleCheckAt and floatZ < float.surface - 0.5 then
-                        obstacleCheckAt = GetGameTimer() + 750
-                        local routeX, routeY = findAscentRoute(ped, float.x, float.y, floatZ, float.surface)
-                        if routeX then
-                            if math.abs(routeX - float.x) > 0.5 or math.abs(routeY - float.y) > 0.5 then
-                                local ok, accepted = pcall(lib.callback.await,
-                                    'ptech_mediora_marine:reportFlotationObstacle', false, float.ticket,
-                                    { x = routeX, y = routeY, z = floatZ })
-                                if not ok or not accepted then obstacleCheckAt = GetGameTimer() + 3000 end
-                            end
-                        else
-                            pcall(lib.callback.await, 'ptech_mediora_marine:reportFlotationObstacle', false,
-                                float.ticket, { x = float.x, y = float.y, z = floatZ, blocked = true })
-                            obstacleCheckAt = GetGameTimer() + 3000
-                        end
+                    local dx, dy = float.x - floatX, float.y - floatY
+                    local distance = math.sqrt(dx * dx + dy * dy)
+                    if not obstacleProbe and GetGameTimer() >= obstacleCheckAt
+                        and distance < 0.1 and floatZ < float.surface - 0.5 then
+                        checkAscentRoute(own, ped, float, floatZ)
                     end
 
-                    -- サーバーが配信した目標Zへ追従し、クライアントごとの上昇差を抑える。
-                    local delta = float.z - floatZ
-                    local maxStep = math.max(0.0, Config.Flotation.RiseSpeed) * 2.0 * math.min(GetFrameTime(), 0.1)
-                    if math.abs(delta) <= maxStep then
-                        floatZ = float.z
-                    else
-                        floatZ = floatZ + (delta > 0 and maxStep or -maxStep)
+                    local riseSpeed = math.max(0.0, Config.Flotation.RiseSpeed)
+                    local horizontalStep = riseSpeed * math.min(GetFrameTime(), 0.1)
+                    local step = horizontalStep
+                    if float.blocked then
+                        floatZ = floatZ + math.max(-step, math.min(0.0, float.z - floatZ))
+                    elseif not ascentObstructed then
+                        -- 通常は毎フレーム定速で上昇し、配信座標から最大250ms分だけ先行する。
+                        local maxLead = riseSpeed * 0.25
+                        local ceiling = math.min(float.surface, float.z + maxLead)
+                        if float.z - floatZ > maxLead then step = step * 2.0 end
+                        floatZ = math.max(floatZ, math.min(ceiling, floatZ + step))
                     end
                     floatZ = math.min(float.surface, floatZ)
                     SetEntityVelocity(ped, 0.0, 0.0, 0.0)
-                    local horizontalStep = math.max(0.0, Config.Flotation.RiseSpeed) * math.min(GetFrameTime(), 0.1)
-                    local dx, dy = float.x - floatX, float.y - floatY
-                    local distance = math.sqrt(dx * dx + dy * dy)
                     if distance <= horizontalStep then
                         floatX, floatY = float.x, float.y
                     elseif distance > 0.0 then
@@ -359,7 +398,7 @@ CreateThread(function()
             end
         else
             floatTicket, floatX, floatY, floatZ, blockedTicket = nil, nil, nil, nil, nil
-            obstacleCheckAt = 0
+            obstacleCheckAt, obstacleProbe, ascentObstructed = 0, nil, false
         end
 
         if Config.Flotation.Visual and Config.Flotation.Visual.Enabled then

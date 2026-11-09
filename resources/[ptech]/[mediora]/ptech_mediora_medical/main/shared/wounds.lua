@@ -44,6 +44,7 @@ function W.damage(state, part, kind, pct, fatal, random)
     if pct == 0 and kind ~= 'pin' and not fatal then return nil end
     local function announce(symptom) notices[#notices + 1] = { part = part, symptom = symptom } end
     if kind == 'blunt' then
+        p.bluntRecoveryAt = nil
         if not p.wounds.bruise then p.wounds.blunt = true end
         p.blunt = bound(p.blunt + pct)
     elseif kind == 'cut' then
@@ -63,6 +64,7 @@ function W.damage(state, part, kind, pct, fatal, random)
         if (fatal and kind == 'blunt') or roll(p.blunt - settings.BruiseOffset, random) then
             local first = not p.wounds.bruise
             p.wounds.bruise, p.wounds.blunt = true, nil
+            p.bluntRecoveryAt = nil
             p.blunt = bound(p.blunt + settings.BruiseBonus) -- 再当選でも毎回＋5
             floor(p)
             if first and not fatal then announce('bruise') end
@@ -100,10 +102,29 @@ function W.decay(state, minutes)
     state.revision = state.revision + 1
 end
 
+function W.expireBlunt(state, now)
+    local changed = false
+    for _, p in pairs(state.parts) do
+        if p.bluntRecoveryAt and now >= p.bluntRecoveryAt then
+            p.bluntRecoveryAt = nil
+            if p.wounds.blunt then
+                p.wounds.blunt = nil
+                changed = true
+            end
+        end
+    end
+    if changed then state.revision = state.revision + 1 end
+    return changed
+end
+
 function W.medication(state, full)
+    local recoverAt = full and os.time() + Config.Wounds.BluntRecoverySeconds
     for _, p in pairs(state.parts) do
         p.blunt, p.sharp = p.blunt / 2, p.sharp / 2
-        if full then p.wounds.blunt, p.wounds.cut = nil, nil end
+        if full then
+            p.wounds.cut = nil
+            if p.wounds.blunt then p.bluntRecoveryAt = p.bluntRecoveryAt or recoverAt end
+        end
         floor(p)
     end
     state.revision = state.revision + 1
@@ -139,6 +160,7 @@ function W.addTestInjury(state, part, kind, level)
                 or math.max(1, math.min(current, threshold))
         end
         if kind == 'bruise' then p.wounds.blunt = nil end
+        if kind == 'blunt' or kind == 'bruise' then p.bluntRecoveryAt = nil end
         p.wounds[kind] = true
     else
         return false, '傷の種類が無効です'
@@ -216,6 +238,7 @@ function W.treat(state, plan, full)
     if a.bleeding then p.bleeding = nil end
     if a.suppressFracture then p.fracture = 'suppressed' end
     if a.suppressBleeding then p.bleeding = 'suppressed' end
+    if a.blunt then p.bluntRecoveryAt = nil end
     if a.blunt or a.bruise or a.fracture then p.blunt = math.min(p.blunt, Config.Wounds.TreatmentRiskMax) end
     if a.cut or a.shot or a.bleeding then p.sharp = math.min(p.sharp, Config.Wounds.TreatmentRiskMax) end
     if a.heal then W.medication(state, full) end

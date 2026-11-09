@@ -153,6 +153,7 @@ Config = {
     HealthBase = 100,
     Maximum = 90,
     Decay = 1,
+    BluntRecoverySeconds = 15 * 60, -- 回復アイテムで全快してから打ち身が消えるまで
     BleedingBasis = 'blunt',
     FallbackPart = 'upper_body',
     BurnBonus = 10,

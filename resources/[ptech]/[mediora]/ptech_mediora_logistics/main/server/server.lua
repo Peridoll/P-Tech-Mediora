@@ -466,15 +466,19 @@ end
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 local function getSellValueForParcel(parcel, hospital)
-  local multiplier = Config.Economy.unopenedBoxSellMultiplier
+  local value = contentsSellValue(parcel.contents)
+  if parcel.kind ~= 'special' then
+    return math.floor(value * Config.Economy.unopenedBoxSellMultiplier), false, false
+  end
+  local multiplier = Config.Economy.specialBoxBaseMultiplier
   local gradeProfile = getGradeProfile(parcel.sourceGrade or 1)
   multiplier = multiplier * (gradeProfile and gradeProfile.sellMultiplier or 1.0)
   local premium = parcel.kind == 'special' and parcel.date == getTodayDate() and hospital.id == parcel.bonusHospital
   if premium then multiplier = multiplier * Config.Economy.specialBoxSellMultiplier end
   local expiredSpecial = parcel.kind == 'special' and not premium
-  -- 当日病院倍率は通常箱・特注箱の両方にかかる。特注ボーナスだけが当日限定。
+  -- 特注段ボールは病院の日替わり倍率と当日ボーナスを適用する。
   local hospitalRate = getHospitalMultiplier(hospital.id)
-  return math.floor(contentsSellValue(parcel.contents) * multiplier * hospitalRate), premium, expiredSpecial
+  return math.floor(value * multiplier * hospitalRate), premium, expiredSpecial
 end
 
 
@@ -649,6 +653,12 @@ RegisterNetEvent('ptech_mediora_logistics:server:deliver',
   【  】
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
+local function counterBuyPrice(item)
+  local price = item.buyPrice
+  if not price or price <= 0 then return end
+  return math.floor(price * Config.Economy.counterBuyMultiplier + 0.5)
+end
+
 lib.callback.register('ptech_mediora_logistics:server:getTradeCatalog',
   function(source, hospitalId, mode)
     local hospital = hospitalById[hospitalId]
@@ -658,12 +668,13 @@ lib.callback.register('ptech_mediora_logistics:server:getTradeCatalog',
     local catalog = {}
     if mode == 'buy' then
       for itemId, item in pairs(Config.Items) do
-        if item.buyPrice and item.buyPrice > 0 then
+        local price = counterBuyPrice(item)
+        if price and price > 0 then
           catalog[#catalog + 1] = {
             key = itemId,
             id = itemId,
             label = item.label,
-            price = item.buyPrice,
+            price = price,
             count = 0,
             grade = 0,
           }
@@ -673,7 +684,7 @@ lib.callback.register('ptech_mediora_logistics:server:getTradeCatalog',
       local byItemAndGrade = {}
       for _, slot in pairs(exports.ox_inventory:GetInventoryItems(source) or {}) do
         local item = itemById[slot.name]
-        if item and item.sellPrice and item.sellPrice > 0 then
+        if item and item.sellPrice and item.sellPrice > 0 and (not item.buyPrice or item.sellPrice < item.buyPrice) then
           local grade = 0
           local key = ('%s:%s'):format(slot.name, grade)
           local entry = byItemAndGrade[key]
@@ -721,7 +732,7 @@ RegisterNetEvent('ptech_mediora_logistics:server:tradeItem',
     end
 
     if mode == 'buy' then
-      local unitPrice = item.buyPrice
+      local unitPrice = counterBuyPrice(item)
       local total = unitPrice and unitPrice * count
       if not total or not exports.ox_inventory:CanCarryItem(source, itemId, count) then
         notify(source, Config.Text.inventoryFull)
@@ -756,6 +767,10 @@ RegisterNetEvent('ptech_mediora_logistics:server:tradeItem',
 
       local profile = grade > 0 and getGradeProfile(grade) or nil
       local multiplier = profile and profile.sellMultiplier or 1.0
+      if not item.sellPrice or item.sellPrice <= 0 or (item.buyPrice and item.sellPrice >= item.buyPrice) then
+        notify(source, Config.Text.tradeInvalid)
+        return
+      end
       local unitPrice = math.floor(item.sellPrice * multiplier + 0.5)
       total = unitPrice * count
 

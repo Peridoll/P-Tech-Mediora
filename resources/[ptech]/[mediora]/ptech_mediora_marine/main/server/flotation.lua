@@ -150,10 +150,12 @@ lib.callback.register('ptech_mediora_marine:reportFlotationObstacle', function(s
 
     if route.blocked == true then
         float.blocked = true
+        float.rerouting = nil
         float.z = math.min(float.z, route.z)
     else
         float.x, float.y = route.x, route.y
         float.blocked = false
+        float.rerouting = dx * dx + dy * dy > 0.25
     end
     float.updatedAt = GetGameTimer()
     revision = revision + 1
@@ -167,7 +169,12 @@ CreateThread(function()
         Wait(100)
         local now = GetGameTimer()
         for id, float in pairs(floats) do
-            if not float.blocked then
+            if float.rerouting then
+                local coords = GetEntityCoords(float.ped)
+                local dx, dy = coords.x - float.x, coords.y - float.y
+                float.rerouting = dx * dx + dy * dy > 0.25
+                float.updatedAt = now
+            elseif not float.blocked then
                 local elapsed = math.max(0, math.min(now - float.updatedAt, 500)) / 1000
                 float.updatedAt = now
                 local nextZ = math.min(float.surface,

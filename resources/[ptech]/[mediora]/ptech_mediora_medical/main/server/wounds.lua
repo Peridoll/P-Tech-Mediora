@@ -10,7 +10,9 @@ local function patient(src)
     local id = player and player.PlayerData.citizenid
     if type(id) ~= 'string' or id == '' then return end
     patients[id] = patients[id] or W.new()
-    return patients[id], id, player.PlayerData
+    local state = patients[id]
+    local expired = W.expireBlunt(state, os.time())
+    return state, id, player.PlayerData, expired
 end
 
 function S.get(src)
@@ -394,10 +396,11 @@ CreateThread(function()
         if minute then lastMinute = now end
         for _, value in ipairs(GetPlayers()) do
             local src = tonumber(value)
-            local state = patient(src)
+            local state, _, _, expired = patient(src)
             if state then
                 S.updateDeath(src)
-                if minute then W.decay(state, 1); sync(src) end
+                if minute then W.decay(state, 1) end
+                if minute or expired then sync(src) end
             end
         end
     end

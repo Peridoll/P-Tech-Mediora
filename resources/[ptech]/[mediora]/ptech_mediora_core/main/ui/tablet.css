@@ -37,7 +37,16 @@
 }
 .tablet-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .tablet-page { flex: 1; min-height: 0; padding: 30px; overflow-y: auto; }
-#tablet-home { padding: 0; }
+.tablet-home-overview { display: grid; gap: 18px; margin-top: 16px; max-width: 620px; }
+#tablet-home-duty { display: flex; align-items: baseline; gap: 8px; justify-self: start; padding: 12px 16px; border-radius: 8px; background: #dfebe7; color: #315c51; }
+#tablet-home-duty strong { font-size: 23px; }
+.tablet-home-overview h2 { margin: 0 0 8px; font-size: 15px; }
+#tablet-home-roster-list { list-style: none; margin: 0; padding: 0; }
+#tablet-home-roster-list li { display: flex; gap: 12px; justify-content: space-between; border-bottom: 1px solid #dce5e3; padding: 8px 0; overflow-wrap: anywhere; }
+#tablet-home-roster-list small { color: #527078; }
+.tablet-home-notices details { padding: 10px 0; border-bottom: 1px solid #dce5e3; overflow-wrap: anywhere; }
+.tablet-home-notices summary { cursor: pointer; font-weight: 600; }
+.tablet-home-notices details p { white-space: pre-wrap; }
 .tablet-progress-settings { display: grid; gap: 12px; margin-top: 22px; max-width: 330px; }
 #tablet-progress-theme { font: inherit; padding: 10px 12px; border: 1px solid #a9c0bc; border-radius: 7px; background: #fff; color: #233e47; }
 .tablet-progress-preview { padding: 14px 16px; border-radius: 8px; color: #e6f2f2; background: #142e36; }
@@ -48,7 +57,9 @@
 #tablet-chart-submit { padding: 10px 18px; border-radius: 7px; color: #fff; background: #216b5d; }
 #tablet-chart-status { font-size: 12px; color: #527078; }
 #tablet-chart-results h2 { font-size: 18px; overflow-wrap: anywhere; }
-#tablet-chart-history { display: block; width: 100%; margin: 8px 0 16px; }
+#tablet-chart-history { display: block; width: 100%; margin: 8px 0 12px; }
+#tablet-chart-open { margin-bottom: 12px; padding: 9px 15px; border: 1px solid #246e65; border-radius: 7px; background: #246e65; color: #fff; font: inherit; cursor: pointer; }
+#tablet-chart-open:disabled { opacity: .55; cursor: default; }
 .tablet-chart-record { padding: 14px 18px; border: 1px solid #dce5e3; border-radius: 8px; background: #fff; overflow-wrap: anywhere; }
 .tablet-chart-record h3 { margin: 0; font-size: 14px; }
 #tablet-chart-injuries { margin: 0; padding-left: 18px; line-height: 1.8; }

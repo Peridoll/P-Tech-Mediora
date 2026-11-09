@@ -27,6 +27,7 @@ function RegisterNUICallback(name, fn) nuiCallbacks[name] = fn end
 restrictedCommands = {}
 function RegisterCommand(name, fn, restricted) commands[name] = fn; restrictedCommands[name] = restricted end
 function CreateThread(fn) fn() end
+function GetPlayers() return {} end
 function GetCurrentResourceName() return 'ptech_mediora_medical' end
 function GetGameTimer() return clock end
 function SetTimeout(ms, fn) timers[#timers + 1] = {ms = ms, fn = fn} end

@@ -37,6 +37,14 @@ with sync_playwright() as p:
             req.abort()
     page.route('https://**/*', route)
     page.goto(UI.joinpath('index.html').as_uri())
+    saved_issued_at = chart['issuedAt']
+    chart['issuedAt'] = '2000-01-01T00:00:00Z'
+    page.evaluate('window.postMessage({action:"charts:open",data:{targetId:2}}, "*")')
+    all_dates = page.get_by_role('button', name='全日付を表示（1件）')
+    all_dates.click()
+    assert page.locator('#chart-date').input_value() == ''
+    assert page.locator('#chart-detail').is_visible()
+    chart['issuedAt'] = saved_issued_at
     def open_chart(treatment=False):
         page.evaluate('(data) => window.postMessage({action:"charts:open", data}, "*")',
                       dict(targetId=2, chartId='chart-1', openTreatment=treatment))
@@ -98,21 +106,44 @@ with sync_playwright() as p:
     page.locator('#chart-bill').click()
     assert page.locator('#chart-billing-window').is_visible()
     assert '400,000' in page.locator('#chart-billing-total').inner_text()
+    page.locator('#chart-billing-mode').select_option('manual')
+    amount = page.locator('#chart-billing-amount')
+    assert page.locator('#chart-billing-submit').is_disabled()
+    amount.fill('0')
+    assert page.locator('#chart-billing-submit').is_disabled()
+    amount.fill('125000')
+    assert '125,000' in page.locator('#chart-billing-total').inner_text()
+    assert page.locator('#chart-billing-submit').is_enabled()
     page.locator('#chart-billing-close').click()
     result['currentInjuries'] = []
     result['vitals']['health'] = 100
-    open_chart()
+    open_chart(treatment=True)
     assert page.locator('#chart-treat').inner_text() == '治療済'
+    assert page.locator('#chart-treat').is_disabled()
+    assert page.locator('#treatment-screen').is_hidden()
     for width,height in [(1280,720),(960,600)]:
         page.set_viewport_size(dict(width=width,height=height))
         box = page.locator('.chart-panel').bounding_box()
         assert box['x']>=0 and box['y']>=0 and box['x']+box['width']<=width+1 and box['y']+box['height']<=height+1
-    chart.update(archived=True, currentInjuries=[])
+    old_items = result['treatmentItems']
+    result.update(currentInjuries=injuries, treatmentItems={}, vitals=dict(health=0, down=True))
+    open_chart()
+    assert page.locator('#chart-treat').is_enabled() and page.locator('#chart-revive').is_enabled()
+    page.locator('#chart-treat').click()
+    assert '道具がありません' in page.locator('#chart-treatment-result').inner_text()
+    result.update(currentInjuries=[], treatmentItems=old_items, vitals=dict(health=100, down=False))
+    chart.update(archived=True, currentInjuries=injuries)
     open_chart()
     assert page.locator('#chart-treat').inner_text() == '治療\n無効'
     assert page.locator('#chart-bill').inner_text() == '請求\n無効'
     assert page.locator('#chart-revive').inner_text() == '蘇生\n不要'
     assert all(page.locator(f'#chart-{action}').is_disabled() for action in ('treat', 'bill', 'revive'))
+    chart.update(currentInjuries=[], invoiceId=123)
+    open_chart()
+    assert page.locator('#chart-treat').inner_text() == '治療済'
+    assert page.locator('#chart-bill').inner_text() == '請求済'
+    assert all(page.locator(f'#chart-{action}').is_disabled() for action in ('treat', 'bill'))
+    chart.pop('invoiceId')
     chart.update(archived=False, death='死亡', deathCause='餓死（空腹値からの推定）')
     starvation = dict(part='upper_body', body='全身', kind='starvation', severity=1, bleed=0, model='medical')
     chart.update(injuries=[starvation], treated={})

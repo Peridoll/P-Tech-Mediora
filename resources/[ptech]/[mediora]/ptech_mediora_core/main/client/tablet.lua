@@ -13,11 +13,11 @@ local progressThemes = { mediora = true, blue = true, amber = true, violet = tru
 local progressTheme = GetResourceKvpString('progressTheme')
 if not progressThemes[progressTheme] then progressTheme = 'mediora' end
 
-local function closeTablet()
+local function closeTablet(keepFocus)
     if not opened then return end
     opened = false
     generation = generation + 1
-    SetNuiFocus(false, false)
+    if keepFocus ~= true then SetNuiFocus(false, false) end
     SendNUIMessage({ action = 'tablet:close' })
 end
 
@@ -113,15 +113,43 @@ RegisterNUICallback('tabletCharts', function(data, cb)
     cb(ok and type(result) == 'table' and result or { error = 'カルテを取得できませんでした' })
 end)
 
+local openingChart = false
+RegisterNUICallback('tabletOpenChart', function(data, cb)
+    if not opened or openingChart then cb({ error = 'カルテ画面を開けません' }); return end
+    if type(data) ~= 'table' then cb({ error = 'カルテ画面を開けません' }); return end
+    local target = tonumber(data.targetId)
+    if data.targetId ~= nil and (not target or target <= 0 or target % 1 ~= 0
+        or type(data.chartId) ~= 'string' or data.chartId == '') then
+        cb({ error = '患者のカルテを選択してください' }); return
+    end
+    if GetResourceState('ptech_mediora_medical') ~= 'started' then
+        cb({ error = 'Medicalが停止中のため、カルテを開けません' }); return
+    end
+    openingChart = true
+    -- Release Core before Medical acquires the cursor. Closing Core afterward only hides its UI.
+    SetNuiFocus(false, false)
+    local ok, displayed = pcall(function()
+        return exports.ptech_mediora_medical:openCharts(target, data.chartId)
+    end)
+    openingChart = false
+    if not ok or displayed ~= true then
+        if opened then SetNuiFocus(true, true) end
+        cb({ error = 'カルテを開けませんでした。勤務状態を確認してください' })
+        return
+    end
+    closeTablet(true)
+    cb({ ok = true })
+end)
+
 exports('openTablet', openTablet)
-for _, route in ipairs({ 'tabletAccess', 'tabletResources', 'tabletResourceAction' }) do
+for _, route in ipairs({ 'tabletAccess', 'tabletHome', 'tabletResources', 'tabletResourceAction' }) do
     local callbackRoute = route
     RegisterNUICallback(callbackRoute, function(data, cb)
         if not opened then cb({ ok = false, error = 'closed' }) return end
         local requestGeneration = generation
         local ok, result = pcall(function()
             local delay = 1000
-            if callbackRoute == 'tabletAccess' then delay = false end
+            if callbackRoute == 'tabletAccess' or callbackRoute == 'tabletHome' then delay = false end
             return lib.callback.await('ptech_mediora_core:' .. callbackRoute, delay, data)
         end)
         if not opened or requestGeneration ~= generation then

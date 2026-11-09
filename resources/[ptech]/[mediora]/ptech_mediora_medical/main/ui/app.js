@@ -111,6 +111,14 @@ function clearChartResults() {
   byId('chart-injuries').replaceChildren();
 }
 
+function chartDay(value) {
+  const date = new Date(value);
+  if (!value || !Number.isFinite(date.getTime())) return '';
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return date.getFullYear() + '-' + month + '-' + day;
+}
+
 function issuedDate(value) {
   const date = new Date(value);
   return value && !Number.isNaN(date.getTime()) ? date.toLocaleString('ja-JP', { hour12: false }) : '日時未記録';
@@ -233,10 +241,25 @@ function renderChartCallouts(chart, figure, injuries, options, tools) {
 }
 
 function renderCharts(result, preferredId, openTreatment) {
-  const charts = Array.isArray(result.charts) ? result.charts : [];
+  const records = Array.isArray(result.charts) ? result.charts : [];
+  const date = byId('chart-date').value;
+  const charts = date ? records.filter(chart => chartDay(chart.issuedAt) === date) : records;
   text('chart-sidebar-patient', result.patient.name || '氏名未登録');
   byId('chart-sidebar-patient').hidden = false;
-  chartNotice(charts.length ? '' : 'この患者のカルテはありません。');
+  chartNotice(result.historyUnavailable ? 'DBのカルテ履歴を取得できません。現在の診療記録を表示しています。'
+    : result.savePending ? 'DBへの保存を再試行しています。未保存のカルテがあります。'
+    : charts.length ? '' : date ? 'この日のカルテはありません。' : 'この患者のカルテはありません。');
+  if (date && !charts.length && records.length) {
+    const allDates = document.createElement('button');
+    allDates.type = 'button';
+    allDates.className = 'secondary chart-all-dates';
+    allDates.textContent = '全日付を表示（' + records.length + '件）';
+    allDates.onclick = () => {
+      byId('chart-date').value = '';
+      renderCharts(result);
+    };
+    byId('chart-notice').append(allDates);
+  }
   const choices = [];
   const select = index => {
     const chart = charts[index];
@@ -254,11 +277,12 @@ function renderCharts(result, preferredId, openTreatment) {
     selectInjury.replaceChildren();
     selectInjury.disabled = false;
     const archived = chart.archived === true;
-    const nativeRows = (archived ? chart.currentInjuries : result.currentInjuries ?? chart.currentInjuries)
+    const rows = (archived ? chart.currentInjuries : result.currentInjuries ?? chart.currentInjuries)
       ?? (chart.injuries || []).filter((_, index) => !chart.treated?.[index + 1]);
+    const nativeRows = Array.isArray(rows) ? rows : [];
     const definitions = result.itemDefinitions || {};
     const tools = {};
-    const available = archived ? [] : result.treatmentItems || [];
+    const available = !archived && Array.isArray(result.treatmentItems) ? result.treatmentItems : [];
     for (const item of available) tools[item.name] = item.label;
     const compatible = (part, item) => {
       const spec = definitions[item];
@@ -296,16 +320,21 @@ function renderCharts(result, preferredId, openTreatment) {
     const revive = byId('chart-revive');
     const remaining = nativeRows.length > 0;
     const treatmentPending = remaining || selectInjury.options.length > 0;
-    const down = ['死亡', '瀕死（laststand）'].includes(chart.death);
-    treat.firstElementChild.textContent = archived ? '治療\n無効' : !treatmentPending ? '治療済' : '治療';
-    treat.classList.toggle('stamped', !archived && !treatmentPending);
-    treat.disabled = archived || !!chart.invoiceId || !selectInjury.options.length;
-    const unnecessary = !chart.revived && chart.death === '死亡・瀕死フラグなし';
+    const recordedDown = ['死亡', '瀕死（laststand）'].includes(chart.death);
+    const down = archived ? recordedDown : result.vitals?.down ?? recordedDown;
+    const needsIV = result.canReceiveIV === true;
+    treat.firstElementChild.textContent = !treatmentPending ? '治療済' : archived ? '治療\n無効' : '治療';
+    treat.classList.toggle('stamped', !treatmentPending);
+    treat.disabled = archived || !!chart.invoiceId || !treatmentPending;
+    const unnecessary = !chart.revived && !down
+      && ((!archived && result.vitals?.down === false) || chart.death === '死亡・瀕死フラグなし');
     revive.firstElementChild.textContent = chart.revived ? '蘇生済' : unnecessary ? '蘇生\n不要' : archived ? '蘇生\n無効' : '蘇生';
     revive.classList.toggle('unnecessary', unnecessary);
     revive.classList.toggle('stamped', !!chart.revived || unnecessary);
-    revive.disabled = archived || !!chart.invoiceId || remaining || !down || !!chart.revived;
-    byId('chart-revive-result').hidden = true;
+    revive.disabled = archived || !!chart.invoiceId || needsIV || !down || !!chart.revived;
+    const showIVHint = !archived && !chart.invoiceId && down && needsIV;
+    byId('chart-revive-result').hidden = !showIVHint;
+    if (showIVHint) text('chart-revive-result', '蘇生の前に点滴を使用してください。');
     revive.onclick = async () => {
       revive.disabled = true;
       const request = chartRequest;
@@ -431,6 +460,9 @@ function renderCharts(result, preferredId, openTreatment) {
     byId('chart-treat').onclick = () => {
       text('treatment-patient', result.patient.name || '氏名未登録');
       showTreatment(true);
+      if (remaining && !selectInjury.options.length) {
+        text('chart-treatment-result', needsIV ? '点滴が必要です。' : '所持品にこの傷を処置できる道具がありません。');
+      }
     };
     treatment.onsubmit = async event => {
       event.preventDefault();
@@ -483,45 +515,71 @@ function renderCharts(result, preferredId, openTreatment) {
     byId('chart-supplies-table').hidden = !supplies.rows.length;
     byId('chart-supplies-empty').hidden = !!supplies.rows.length;
     const bill = byId('chart-bill');
-    bill.firstElementChild.textContent = archived ? '請求\n無効' : chart.invoiceId ? '請求済' : '請求';
+    bill.firstElementChild.textContent = chart.invoiceId ? '請求済' : archived ? '請求\n無効' : '請求';
     bill.classList.toggle('stamped', !!chart.invoiceId);
+    bill.title = chart.invoiceTotal ? '請求額 ' + yen(chart.invoiceTotal) : '';
     const billingWindow = byId('chart-billing-window');
+    const mode = byId('chart-billing-mode');
+    const amount = byId('chart-billing-amount');
     const category = byId('chart-billing-revive');
     const sendBill = byId('chart-billing-submit');
+    let submittingBill = false;
     const reviveFees = { field: 800000, hospital: 400000, police: 300000, jail: 200000 };
-    bill.disabled = archived || !!chart.unpriced || !!chart.invoiceId || !(chart.totalCharge > 0 || chart.revived);
+    bill.disabled = archived || !!chart.invoiceId || !(chart.totalCharge > 0 || chart.revived || chart.unpriced);
     const updateTotal = () => {
-      text('chart-billing-total', yen((chart.totalCharge || 0) + (chart.revived ? reviveFees[category.value] || 0 : 0)));
-      sendBill.disabled = !!chart.revived && !category.value;
+      const manual = mode.value === 'manual';
+      byId('chart-billing-amount-field').hidden = !manual;
+      byId('chart-billing-revive-field').hidden = manual || !chart.revived;
+      category.required = !manual && !!chart.revived;
+      category.disabled = !category.required;
+      amount.disabled = !manual;
+      amount.required = manual;
+      const total = manual ? amount.valueAsNumber : (chart.totalCharge || 0) + (chart.revived ? reviveFees[category.value] || 0 : 0);
+      const valid = manual ? amount.validity.valid : !chart.unpriced && (!chart.revived || !!category.value) && total > 0;
+      text('chart-billing-total', valid ? yen(total) : '—');
+      sendBill.disabled = submittingBill || !valid;
     };
     bill.onclick = () => {
       text('chart-billing-patient', result.patient.name || '氏名未登録');
-      byId('chart-billing-revive-field').hidden = !chart.revived;
       byId('chart-bill-result').hidden = true;
+      mode.options[0].disabled = !!chart.unpriced;
+      mode.value = chart.unpriced ? 'manual' : 'preset';
       category.value = '';
-      category.required = !!chart.revived;
+      amount.max = chart.manualBillingLimit || 100000000;
+      amount.value = '';
       updateTotal();
       billingWindow.showModal();
     };
     category.onchange = updateTotal;
+    mode.onchange = updateTotal;
+    amount.oninput = updateTotal;
     byId('chart-billing-form').onsubmit = async event => {
       event.preventDefault();
       if (sendBill.disabled) return;
+      submittingBill = true;
       sendBill.disabled = true;
       const request = chartRequest;
       try {
         const response = await postNui('billChart', {
           targetId: result.patient.serverId, chartId: chart.chartId, category: category.value,
+          manualAmount: mode.value === 'manual' ? amount.valueAsNumber : undefined,
         });
         if (request !== chartRequest || chartApp.hidden) return;
         if (!response?.ok) throw new Error(response?.error || '請求に失敗しました');
+        await animateBillSent(billingWindow);
+        if (request !== chartRequest || chartApp.hidden) return;
+        bill.disabled = true;
+        bill.firstElementChild.textContent = '請求済';
+        bill.classList.add('stamped');
         billingWindow.close();
-        searchCharts(chart.chartId);
+        await action('close');
       } catch (error) {
         if (request !== chartRequest || !billingWindow.open) return;
         text('chart-bill-result', error.message);
         byId('chart-bill-result').hidden = false;
-        updateTotal();
+      } finally {
+        submittingBill = false;
+        if (request === chartRequest) updateTotal();
       }
     };
     const showSummary = supplies.rows.length > 0;
@@ -581,22 +639,31 @@ function renderCharts(result, preferredId, openTreatment) {
   if (charts.length) {
     const preferred = charts.findIndex(chart => chart.chartId === preferredId);
     select(preferred >= 0 ? preferred : 0);
-    if (openTreatment && preferred >= 0 && !charts[preferred].archived) {
-      byId('chart-treat').onclick();
-      if (!byId('chart-treatment-injury').options.length) {
-        text('chart-treatment-result', '処置できる傷は残っていません。');
-      }
-    }
+    if (openTreatment && preferred >= 0) byId('chart-treat').click();
   }
 }
 
-async function searchCharts(preferredId, openTreatment) {
+let chartPatients = [];
+const patientChoice = patient => patient.name + '（ID ' + patient.id + '）';
+const normalizePatient = value => value.normalize('NFKC').toLowerCase().replace(/\s/g, '');
+
+async function searchCharts(preferredId, openTreatment, selectPreferredDate = false) {
   cancelChartRequest();
   const request = chartRequest;
   clearChartResults();
-  const targetId = Number(byId('chart-patient-id').value);
+  const query = normalizePatient(byId('chart-patient-id').value);
+  let targetId = /^\d+$/.test(query) ? Number(query) : undefined;
+  if (query && targetId === undefined) {
+    const selected = chartPatients.find(patient => normalizePatient(patientChoice(patient)) === query);
+    const matches = selected ? [selected] : chartPatients.filter(patient => normalizePatient(patient.name).includes(query));
+    if (matches.length > 1) {
+      chartNotice('該当する患者が複数います。候補から患者を選んでください。');
+      return;
+    }
+    targetId = matches[0]?.id;
+  }
   if (!Number.isSafeInteger(targetId) || targetId < 1) {
-    chartNotice('患者IDには正の整数を入力してください。');
+    chartNotice('接続中の患者名またはサーバーIDを入力してください。');
     return;
   }
   chartNotice('カルテを取得しています…');
@@ -608,9 +675,62 @@ async function searchCharts(preferredId, openTreatment) {
       chartNotice(result?.error || 'カルテを取得できませんでした。');
       return;
     }
+    if (selectPreferredDate && Array.isArray(result.charts)) {
+      const selected = result.charts.find(chart => chart.chartId === preferredId);
+      const date = chartDay(selected?.issuedAt);
+      if (date) byId('chart-date').value = date;
+    }
     renderCharts(result, preferredId, openTreatment);
   } catch {
     if (request === chartRequest && !chartApp.hidden) chartNotice('カルテを取得できませんでした。もう一度確認してください。');
+  }
+}
+
+async function animateBillSent(dialog) {
+  if (!dialog.open || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const form = byId('chart-billing-form');
+  const envelope = byId('billing-envelope');
+  dialog.classList.add('is-sending');
+  const preventCancel = event => event.preventDefault();
+  dialog.addEventListener('cancel', preventCancel);
+  const folds = byId('billing-folds');
+  folds.hidden = false;
+  const paper = form.animate([
+    { clipPath: 'inset(0)' },
+    { clipPath: 'inset(33.333% 0 0)', offset: .44 },
+    { clipPath: 'inset(33.333% 0 33.333%)', offset: .83 },
+    { clipPath: 'inset(33.333% 0 33.333%)', opacity: 0 },
+  ], { duration: 620, fill: 'both' });
+  const flaps = Array.from(folds.children, (flap, index) => {
+    const direction = index === 0 ? -1 : 1;
+    return flap.animate([
+      { transform: 'rotateX(0deg)', opacity: 1 },
+      { transform: 'rotateX(' + 178 * direction + 'deg)', opacity: 1 },
+    ], { duration: 240, delay: index * 260, easing: 'ease-in-out', fill: 'forwards' });
+  });
+  const foldedPaper = folds.animate([{ opacity: 1 }, { opacity: 0 }], {
+    duration: 120, delay: 500, fill: 'forwards',
+  });
+  let flight;
+  try {
+    await paper.finished;
+    if (!dialog.open) return;
+    envelope.hidden = false;
+    flight = envelope.firstElementChild.animate([
+      { transform: 'perspective(520px) translate3d(0, 8px, 0) scale(.75)', opacity: 0 },
+      { transform: 'perspective(520px) translate3d(0, 0, 0) scale(1)', opacity: 1, offset: .22 },
+      { transform: 'perspective(520px) translate3d(32px, -74px, -650px) rotate(-12deg)', opacity: 0 },
+    ], { duration: 540, easing: 'ease-in', fill: 'both' });
+    await flight.finished;
+  } finally {
+    flight?.cancel();
+    paper.cancel();
+    foldedPaper.cancel();
+    for (const flap of flaps) flap.cancel();
+    folds.hidden = true;
+    envelope.hidden = true;
+    dialog.classList.remove('is-sending');
+    dialog.removeEventListener('cancel', preventCancel);
   }
 }
 
@@ -654,10 +774,13 @@ function openCharts(data) {
   app.hidden = true;
   animateTablet(false);
   clearChartResults();
+  byId('chart-date').value = chartDay(new Date());
   byId('chart-patient-id').value = Number.isSafeInteger(data.targetId) && data.targetId > 0 ? data.targetId : '';
-  chartNotice('患者IDを入力してカルテを確認してください。');
+  chartPatients = Array.isArray(data.patients) ? data.patients : [];
+  byId('chart-patient-list').replaceChildren(...chartPatients.map(patient => new Option(patientChoice(patient))));
+  chartNotice('患者名またはIDを入力してカルテを確認してください。');
   byId('chart-patient-id').focus();
-  if (byId('chart-patient-id').value !== '') searchCharts(data.chartId, data.openTreatment);
+  if (byId('chart-patient-id').value !== '') searchCharts(data.chartId, data.openTreatment, !!data.chartId);
 }
 
 async function action(name) {
@@ -688,6 +811,9 @@ byId('close').addEventListener('click', () => action('close'));
 byId('refresh').addEventListener('click', () => action('refresh'));
 byId('open-charts').addEventListener('click', () => action('charts'));
 byId('close-charts').addEventListener('click', () => action('close'));
+byId('chart-date').addEventListener('change', () => {
+  if (byId('chart-patient-id').value !== '') searchCharts();
+});
 byId('chart-search').addEventListener('submit', event => { event.preventDefault(); searchCharts(); });
 document.addEventListener('keydown', event => { if (event.key === 'Escape' && !byId('chart-billing-window').open && (!app.hidden || !chartApp.hidden)) action('close'); });
 
