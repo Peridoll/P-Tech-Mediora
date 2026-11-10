@@ -14,7 +14,7 @@ Config.Items = {
     },
     ['pmediora_splint'] = {
         label = '副木', englishLabel = 'Splint', description = '骨折した箇所を補強する。治療後15分間は再発しやすくなる',
-        weight = 500, stack = true, buyPrice = 150000, sellPrice = 30000,
+        weight = 500, stack = true, sellPrice = 30000,
         rarity = 'R',
         effect = { type = 'treat_injury', injury = 'fracture', applyState = 'splint', stateDuration = 900 },
     },
@@ -31,7 +31,7 @@ Config.Items = {
         effect = { type = 'treat_injury', injury = 'shot', clearBleeding = true, healPercent = 15 },
     },
     ['pmediora_surgicalforceps'] = {
-        label = 'ピンセット', englishLabel = 'Surgical Forceps', description = '患部から弾丸を取り除くが、たまに出血してしまう',
+        label = 'ピンセット', englishLabel = 'Surgical Forceps', description = '患部から弾丸などの異物を取り除く',
         weight = 150, stack = true, buyPrice = 50000, sellPrice = 10000,
         rarity = 'UC',
         effect = { type = 'treat_injury', injury = 'shot', bleedingChance = 0.30 },
@@ -43,7 +43,7 @@ Config.Items = {
         effect = { type = 'treat_injury', injury = 'stabbed', clearBleeding = true, healPercent = 15 },
     },
     ['pmediora_needleandthread'] = {
-        label = '針と糸', englishLabel = 'Needle and Thread', description = '患部を縫い付けるが、たまに出血してしまう',
+        label = '針と糸', englishLabel = 'Needle and Thread', description = '切り傷を縫い合わせる',
         weight = 100, stack = true, buyPrice = 50000, sellPrice = 10000,
         rarity = 'UC',
         effect = { type = 'treat_injury', injury = 'stabbed', bleedingChance = 0.30 },
@@ -53,6 +53,26 @@ Config.Items = {
         weight = 150, stack = true, buyPrice = 100000, sellPrice = 20000,
         rarity = 'C',
         effect = { type = 'treat_injury', injury = 'burned' },
+    },
+    ['pmediora_coolingspray'] = {
+        label = '冷却スプレー', description = '打撲した部位を冷やして処置する。',
+        weight = 150, stack = true, buyPrice = 100000,
+        treatment = '打撲', image = 'pmediora_icepack.png',
+    },
+    ['pmediora_medicatedbandage'] = {
+        label = '薬品包帯', description = '火傷を処置し、出血を止める。',
+        weight = 100, stack = true, buyPrice = 100000,
+        treatment = '火傷・出血', image = 'pmediora_bandage.png',
+    },
+    ['pmediora_protectivecast'] = {
+        label = '保護ギプス', description = '骨折した部位を固定する。',
+        weight = 300, stack = true, buyPrice = 150000,
+        treatment = '骨折', image = 'pmediora_splint.png',
+    },
+    ['pmediora_ivdrip'] = {
+        label = '点滴', description = '餓死・溺死の患者に使用する。餓死では空腹なども回復する。',
+        weight = 300, stack = true, buyPrice = 100000,
+        treatment = '餓死・溺死',
     },
     ['pmediora_herb'] = {
         label = '薬草', englishLabel = 'EMS Herb', description = '摘んできた薬草。雑草ではない',

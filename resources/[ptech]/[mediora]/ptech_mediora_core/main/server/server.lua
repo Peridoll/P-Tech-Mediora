@@ -375,6 +375,10 @@ AddEventHandler('QBCore:Server:OnJobUpdate', function(source, job)
     syncDuty(source, job)
 end)
 
+AddEventHandler('qbx_core:server:onGroupUpdate', function(source, group, grade)
+    if grade == nil and Config.DutyTracking.jobs[group] then syncDuty(source) end
+end)
+
 AddEventHandler('QBCore:Server:OnPlayerUnload', function(source)
     flushDuty(source)
     dutySessions[source] = nil

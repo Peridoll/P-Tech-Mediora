@@ -10,6 +10,7 @@
         element('progress-theme').value = progressTheme;
     }
     let opened = false;
+    let openGeneration;
     let request = 0;
     let busy = false;
     let transition;
@@ -50,6 +51,9 @@
     let chartRequest = 0;
     let charts = [];
     let chartTargetId;
+    let chartPatients = [];
+    const patientChoice = patient => patient.name + '（ID ' + patient.id + '）';
+    const normalizePatient = value => value.normalize('NFKC').toLowerCase().replace(/\s/g, '');
     const chartParts = { head: '頭部', upper_body: '上半身', lower_body: '下半身', left_arm: '左腕', right_arm: '右腕', left_leg: '左脚', right_leg: '右脚' };
     const injuryKinds = { blunt: '打ち身', bruise: '打撲', cut: '切り傷', burn: '火傷', fracture: '骨折', bleeding: '出血', shot: '銃創', stabbed: '刺創', beat: '打撲', burned: '火傷', pin: '通電ピン' };
     const injuryLevels = ['なし', '軽度', '中等度', '高度', '最重度'];
@@ -66,14 +70,19 @@
     function resetCharts() {
         chartRequest++;
         clearChartResults();
+        chartPatients = [];
+        element('chart-patients').replaceChildren();
         element('chart-search').reset();
         element('chart-submit').disabled = false;
-        element('chart-status').textContent = '患者のサーバーIDを入力して照会してください。';
+        element('chart-status').textContent = '患者名またはサーバーIDを入力してください。';
     }
     function showChart() {
         const chart = charts[element('chart-history').selectedIndex];
         if (!chart) return;
-        element('chart-condition').textContent = [chart.death, chart.observationStatus].filter(Boolean).join(' ／ ') || '状態の記録なし';
+        element('chart-condition').textContent = [chart.death, chart.deathCause, chart.observationStatus].filter(Boolean).join(' ／ ') || '状態の記録なし';
+        const billing = chart.invoiceId ? '請求済' : '未請求';
+        const amount = chart.invoiceTotal;
+        element('chart-billing').textContent = billing + (Number.isFinite(amount) ? ' ／ ￥' + amount.toLocaleString('ja-JP') : '');
         const list = element('chart-injuries');
         list.replaceChildren();
         const injuries = Array.isArray(chart.injuries) ? chart.injuries : [];
@@ -94,8 +103,21 @@
     async function searchCharts(event) {
         event.preventDefault();
         if (!opened || page !== 'charts' || element('chart-submit').disabled) return;
-        const targetId = element('chart-patient-id').valueAsNumber;
-        if (!Number.isSafeInteger(targetId) || targetId <= 0) return;
+        const query = normalizePatient(element('chart-patient-id').value);
+        let targetId = /^\d+$/.test(query) ? Number(query) : undefined;
+        if (query && targetId === undefined) {
+            const selected = chartPatients.find(patient => normalizePatient(patientChoice(patient)) === query);
+            const matches = selected ? [selected] : chartPatients.filter(patient => normalizePatient(patient.name).includes(query));
+            if (matches.length > 1) {
+                element('chart-status').textContent = '該当する患者が複数います。候補から選んでください。';
+                return;
+            }
+            targetId = matches[0]?.id;
+        }
+        if (!Number.isSafeInteger(targetId) || targetId <= 0) {
+            element('chart-status').textContent = '接続中の患者名またはサーバーIDを入力してください。';
+            return;
+        }
         const version = ++chartRequest;
         clearChartResults();
         element('chart-submit').disabled = true;
@@ -152,13 +174,15 @@
     async function openChartPage() {
         selectPage('charts');
         if (preview || !opened) return;
-        const version = chartRequest;
-        element('chart-status').textContent = 'カルテ画面を開いています…';
+        const version = request;
         try {
-            const result = await post('tabletOpenChart');
-            if (!result.ok) throw new Error(result.error || 'カルテを開けませんでした。');
+            const result = await post('tabletChartPatients');
+            if (!opened || page !== 'charts' || version !== request) return;
+            if (result.error) throw new Error(result.error);
+            chartPatients = Array.isArray(result.patients) ? result.patients : [];
+            element('chart-patients').replaceChildren(...chartPatients.map(patient => new Option(patientChoice(patient))));
         } catch (error) {
-            if (version === chartRequest) element('chart-status').textContent = error.message;
+            if (opened && page === 'charts' && version === request) element('chart-status').textContent = error.message;
         }
     }
     let isAdmin = false;
@@ -169,6 +193,7 @@
         element('status').textContent = text;
         element('status').hidden = !text;
     }
+    if (!preview) console.info('[mediora shop] ui build=20261111-catalog-1');
     const shopCart = new Map();
     let shopItems = [];
     let shopLimit = 0;
@@ -178,12 +203,13 @@
     const shopMoney = (amount) => '$' + Number(amount).toLocaleString('ja-JP');
     const shopTotal = () => shopItems.reduce((sum, item) => sum + item.price * (shopCart.get(item.id) || 0), 0);
     const shopQuantity = () => [...shopCart.values()].reduce((sum, count) => sum + count, 0);
+    const shopList = value => value && typeof value === 'object' ? Object.values(value).filter(entry => entry && typeof entry === 'object') : [];
 
-    const shopDragType = 'application/x-mediora-shop-item';
+    let shopDrag;
     const shopDropzone = element('shop-dropzone');
 
     function updateShopQuantity(id, count) {
-        if (shopBusy || !shopItems.some(item => item.id === id)) return;
+        if (shopBusy || !shopItems.some(item => item.id === id && item.available !== false)) return;
         const previous = shopCart.get(id) || 0;
         const max = Math.max(0, shopLimit - shopQuantity() + previous);
         const quantity = Math.min(max, Math.max(0, Math.trunc(count)));
@@ -195,16 +221,32 @@
         renderShop();
     }
 
-    function shopItemImage(id) {
+    function shopItemImage(item) {
         const image = document.createElement('img');
         image.alt = '';
         image.draggable = false;
-        image.src = 'https://cfx-nui-ox_inventory/web/images/' + encodeURIComponent(id) + '.png';
+        image.src = 'https://cfx-nui-ox_inventory/web/images/' + encodeURIComponent(item.image || item.id + '.png');
         image.addEventListener('error', () => { image.style.visibility = 'hidden'; });
         return image;
     }
 
+    const shopSearch = element('shop-search');
+
+    function filterShopCatalog() {
+        const query = shopSearch.value.normalize('NFKC').trim().toLowerCase();
+        let count = 0;
+        for (const card of element('shop-items').children) {
+            card.hidden = !card.dataset.search.includes(query);
+            if (!card.hidden) count++;
+        }
+        element('shop-results').textContent = count + '件';
+        element('shop-no-results').hidden = !query || count > 0;
+    }
+
+    shopSearch.addEventListener('input', filterShopCatalog);
+
     function renderShop() {
+        if (shopDrag) clearShopDrag();
         const catalog = element('shop-items');
         const cart = element('shop-cart');
         catalog.replaceChildren();
@@ -212,16 +254,17 @@
         const quantity = shopQuantity();
         for (const item of shopItems) {
             const card = document.createElement('article');
-            const canAdd = !shopBusy && quantity < shopLimit;
-            card.draggable = canAdd;
-            card.addEventListener('dragstart', event => {
-                if (!canAdd || !event.dataTransfer) return event.preventDefault();
-                event.dataTransfer.effectAllowed = 'copy';
-                event.dataTransfer.setData(shopDragType, item.id);
+            card.dataset.search = [item.label, item.description, item.treatment].join(' ').normalize('NFKC').toLowerCase();
+            const canAdd = item.available !== false && !shopBusy && quantity < shopLimit;
+            card.classList.toggle('shop-draggable', canAdd);
+            card.addEventListener('mousedown', event => {
+                if (!canAdd || shopBusy || event.button !== 0 || event.target.closest('button')) return;
+                event.preventDefault();
+                clearShopDrag();
+                shopDrag = { x: event.clientX, y: event.clientY, item };
             });
-            card.addEventListener('dragend', () => shopDropzone.classList.remove('shop-drag-over'));
 
-            const image = shopItemImage(item.id);
+            const image = shopItemImage(item);
             const detail = document.createElement('div');
             const name = document.createElement('strong');
             name.textContent = item.label;
@@ -244,7 +287,7 @@
             owned.textContent = '所持 ' + Number(item.owned ?? 0).toLocaleString('ja-JP') + '個';
             const add = document.createElement('button');
             add.type = 'button';
-            add.textContent = '＋';
+            add.textContent = item.available === false ? '取扱準備中' : '＋ カートに入れる';
             add.setAttribute('aria-label', item.label + 'をカートに追加');
             add.disabled = !canAdd;
             add.addEventListener('click', () => updateShopQuantity(item.id, (shopCart.get(item.id) || 0) + 1));
@@ -292,30 +335,52 @@
             remove.setAttribute('aria-label', item.label + 'をカートから削除');
             remove.addEventListener('click', () => updateShopQuantity(item.id, 0));
             actions.append(subtotal, remove);
-            row.append(shopItemImage(item.id), cartDetail, actions);
+            row.append(shopItemImage(item), cartDetail, actions);
             cart.append(row);
         }
         element('shop-empty').hidden = cart.childElementCount > 0;
-        element('shop-total').textContent = quantity + '点 · ' + shopMoney(shopTotal());
+        filterShopCatalog();
+        element('shop-count').textContent = quantity + '点';
+        element('shop-total').textContent = shopMoney(shopTotal());
         element('shop-place').disabled = shopBusy || shopTotal() <= 0 || quantity > shopLimit;
     }
 
-    shopDropzone.addEventListener('dragover', event => {
-        if (shopBusy || shopQuantity() >= shopLimit || !event.dataTransfer?.types.includes(shopDragType)) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'copy';
-        shopDropzone.classList.add('shop-drag-over');
-    });
-    shopDropzone.addEventListener('dragleave', event => {
-        if (!shopDropzone.contains(event.relatedTarget)) shopDropzone.classList.remove('shop-drag-over');
-    });
-    shopDropzone.addEventListener('drop', event => {
+    function clearShopDrag() {
+        shopDrag?.ghost?.remove();
+        shopDrag = undefined;
         shopDropzone.classList.remove('shop-drag-over');
-        if (!event.dataTransfer?.types.includes(shopDragType)) return;
-        event.preventDefault();
-        const id = event.dataTransfer.getData(shopDragType);
-        updateShopQuantity(id, (shopCart.get(id) || 0) + 1);
+    }
+
+    function overShopCart(event) {
+        const target = document.elementFromPoint(event.clientX, event.clientY);
+        return target !== null && shopDropzone.contains(target);
+    }
+
+    document.addEventListener('mousemove', event => {
+        if (!shopDrag) return;
+        if (!shopDrag.ghost) {
+            if (Math.hypot(event.clientX - shopDrag.x, event.clientY - shopDrag.y) < 5) return;
+            const ghost = document.createElement('div');
+            ghost.className = 'shop-drag-ghost';
+            ghost.setAttribute('aria-hidden', 'true');
+            ghost.append(shopItemImage(shopDrag.item), document.createTextNode(shopDrag.item.label));
+            tablet.append(ghost);
+            shopDrag.ghost = ghost;
+        }
+        shopDrag.ghost.style.left = (event.clientX + 12) + 'px';
+        shopDrag.ghost.style.top = (event.clientY + 12) + 'px';
+        shopDropzone.classList.toggle('shop-drag-over', overShopCart(event));
     });
+    document.addEventListener('mouseup', event => {
+        if (!shopDrag) return;
+        const id = shopDrag.item.id;
+        const moved = Math.hypot(event.clientX - shopDrag.x, event.clientY - shopDrag.y) >= 5;
+        const dropped = event.button === 0 && moved && overShopCart(event);
+        clearShopDrag();
+        if (dropped) updateShopQuantity(id, (shopCart.get(id) || 0) + 1);
+    });
+    document.addEventListener('mouseleave', clearShopDrag);
+    window.addEventListener('blur', clearShopDrag);
 
     async function loadShop(message = '') {
         const version = request;
@@ -324,10 +389,10 @@
             const result = await post('tabletShopCatalog');
             if (!opened || version !== request || page !== 'shop') return;
             if (!result.ok) throw new Error(result.error || 'ストアを開けませんでした。');
-            shopItems = Array.isArray(result.items) ? result.items : [];
+            shopItems = shopList(result.items);
             shopLimit = result.limit;
             for (const id of shopCart.keys()) {
-                if (!shopItems.some(item => item.id === id)) shopCart.delete(id);
+                if (!shopItems.some(item => item.id === id && item.available !== false)) shopCart.delete(id);
             }
             const labels = {
                 waiting: 'ピルボックスで受取待ち', handed_over: 'ピルボックスの受取ロッカー',
@@ -336,21 +401,21 @@
             };
             const history = element('shop-orders');
             history.replaceChildren();
-            const orders = Array.isArray(result.orders) ? result.orders : [];
-            if (!orders.length) history.textContent = '注文はまだありません。';
+            const orders = shopList(result.orders);
+            if (!orders.length) history.textContent = result.historyUnavailable ? '注文履歴を取得できませんでした。' : '注文はまだありません。';
             for (const order of orders) {
                 const entry = document.createElement('li');
                 const title = document.createElement('strong');
                 title.textContent = '#' + order.id + ' · ' + labels[order.status] + ' · ' + shopMoney(order.total);
                 const detail = document.createElement('p');
-                detail.textContent = order.items.map(item => item.label + ' × ' + item.count).join('、');
+                detail.textContent = shopList(order.items).map(item => item.label + ' × ' + item.count).join('、');
                 if (order.status === 'waiting') {
                     detail.textContent += ' / 受取期限 ' + new Date(order.expiresAt * 1000).toLocaleString('ja-JP');
                 }
                 entry.append(title, detail);
                 history.append(entry);
             }
-            shopStatus(message);
+            shopStatus(message || (!shopItems.length ? '販売商品が設定されていません。' : ''));
         } catch (error) {
             if (!opened || version !== request || page !== 'shop') return;
             shopItems = [];
@@ -364,12 +429,21 @@
         if (shopBusy || shopTotal() <= 0 || shopQuantity() > shopLimit) return;
         const version = request;
         shopBusy = true;
-        shopKey ||= Array.from(crypto.getRandomValues(new Uint32Array(4)), number => number.toString(16).padStart(8, '0')).join('');
-        renderShop();
         try {
+            if (!shopKey) {
+                const words = new Uint32Array(4);
+                if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(words);
+                else for (let i = 0; i < words.length; i++) words[i] = Math.floor(Math.random() * 0x100000000);
+                shopKey = Array.from(words, number => number.toString(16).padStart(8, '0')).join('');
+            }
+            renderShop();
+            shopStatus('決済を処理しています…');
             const result = await post('tabletShopPlace', { key: shopKey, cart: Object.fromEntries(shopCart), total: shopTotal() });
             if (!opened || version !== request) return;
-            if (!result.ok) throw new Error(result.error || '注文できませんでした。');
+            if (!result.ok) {
+                if (result.retryWithNewKey === true) shopKey = undefined;
+                throw new Error(result.error || '注文できませんでした。');
+            }
             shopCart.clear();
             shopKey = undefined;
             if (page === 'shop') await loadShop('注文 #' + result.id + ' を受け付けました。');
@@ -447,21 +521,169 @@
         else homeRequest++;
     });
 
+    let canManagePersonnel = false;
+    let personnelRequest = 0;
+    let personnelAction;
+
+    function resetPersonnel() {
+        personnelRequest++;
+        personnelAction = undefined;
+        element('personnel-confirm').hidden = true;
+        element('personnel-content').hidden = true;
+        element('personnel-list').replaceChildren();
+        element('personnel-candidate').replaceChildren();
+        element('personnel-hire-grade').replaceChildren();
+        element('personnel-status').textContent = '';
+        element('personnel-refresh').disabled = false;
+    }
+
+    const personnelActions = { hire: '採用', grade: '階級変更', dismiss: '解雇' };
+    function confirmPersonnel(action, target, level, gradeName) {
+        personnelAction = {
+            action, id: target.id, source: target.source, currentLevel: target.level, level,
+        };
+        const description = gradeName ? target.name + ' ／ ' + gradeName : target.name;
+        element('personnel-confirm-text').textContent = description + ' の' + personnelActions[action] + 'を実行しますか？';
+        element('personnel-confirm').hidden = false;
+        element('personnel-cancel').focus();
+        element('personnel-confirm').scrollIntoView({ block: 'nearest' });
+    }
+
+    function personnelOptions(select, grades, selected) {
+        select.replaceChildren();
+        for (const grade of grades) {
+            const option = document.createElement('option');
+            option.value = grade.level;
+            option.textContent = grade.name;
+            select.append(option);
+        }
+        if (selected !== undefined) select.value = String(selected);
+    }
+
+    function renderPersonnel(result) {
+        const grades = Array.isArray(result.grades) ? result.grades : [];
+        const members = Array.isArray(result.members) ? result.members : [];
+        const candidates = Array.isArray(result.candidates) ? result.candidates : [];
+        const list = element('personnel-list');
+        element('personnel-empty').hidden = members.length > 0;
+        for (const member of members) {
+            const row = document.createElement('li');
+            const name = document.createElement('strong');
+            const summary = document.createElement('small');
+            name.textContent = member.name;
+            summary.textContent = member.grade + ' ／ ' + member.state;
+            row.append(name, summary);
+            if (member.editable && grades.length) {
+                const actions = document.createElement('div');
+                actions.className = 'personnel-actions';
+                const select = document.createElement('select');
+                select.setAttribute('aria-label', member.name + 'の階級');
+                personnelOptions(select, grades, member.level);
+                const save = document.createElement('button');
+                save.type = 'button';
+                save.textContent = '変更';
+                save.disabled = true;
+                select.addEventListener('change', () => { save.disabled = Number(select.value) === member.level; });
+                save.addEventListener('click', () => confirmPersonnel('grade', member, Number(select.value), select.selectedOptions[0].textContent));
+                const dismiss = document.createElement('button');
+                dismiss.type = 'button';
+                dismiss.textContent = '解雇';
+                dismiss.className = 'personnel-danger';
+                dismiss.addEventListener('click', () => confirmPersonnel('dismiss', member));
+                actions.append(select, save, dismiss);
+                row.append(actions);
+            }
+            list.append(row);
+        }
+
+        const candidate = element('personnel-candidate');
+        const hireGrade = element('personnel-hire-grade');
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = candidates.length ? 'オンラインのプレイヤーを選択' : '採用できるプレイヤーがいません';
+        candidate.append(placeholder);
+        for (const person of candidates) {
+            const option = document.createElement('option');
+            option.value = person.id;
+            option.textContent = person.name + '（ID ' + person.source + '）';
+            candidate.append(option);
+        }
+        personnelOptions(hireGrade, grades);
+        const hire = element('personnel-hire');
+        hire.disabled = true;
+        candidate.onchange = () => { hire.disabled = !candidate.value || !grades.length; };
+        hire.onclick = () => {
+            const target = candidates.find(person => person.id === candidate.value);
+            if (target && hireGrade.selectedOptions.length) {
+                confirmPersonnel('hire', target, Number(hireGrade.value), hireGrade.selectedOptions[0].textContent);
+            }
+        };
+        element('personnel-content').hidden = false;
+    }
+
+    async function loadPersonnel(message = '') {
+        resetPersonnel();
+        const version = personnelRequest;
+        const notice = element('personnel-status');
+        element('personnel-refresh').disabled = true;
+        notice.textContent = message || '隊員名簿を読み込んでいます…';
+        try {
+            const result = await post('tabletPersonnel');
+            if (version !== personnelRequest) return;
+            if (!result.ok) throw new Error(result.error);
+            renderPersonnel(result);
+            notice.textContent = message;
+        } catch (error) {
+            if (version === personnelRequest) notice.textContent = error.message || '隊員名簿を取得できませんでした。';
+        } finally {
+            if (version === personnelRequest) element('personnel-refresh').disabled = false;
+        }
+    }
+
+    element('personnel-back').addEventListener('click', () => selectPage('home'));
+    element('personnel-refresh').addEventListener('click', () => loadPersonnel());
+    element('personnel-cancel').addEventListener('click', () => {
+        personnelAction = undefined;
+        element('personnel-confirm').hidden = true;
+    });
+    element('personnel-submit').addEventListener('click', async () => {
+        if (!opened || page !== 'personnel' || !personnelAction) return;
+        const action = personnelAction;
+        resetPersonnel();
+        const version = personnelRequest;
+        element('personnel-refresh').disabled = true;
+        element('personnel-status').textContent = '変更を保存しています…';
+        let message;
+        try {
+            const result = await post('tabletPersonnelAction', action);
+            message = result.ok ? personnelActions[action.action] + 'を反映しました。' : result.error;
+        } catch {
+            message = '変更結果を確認できませんでした。一覧で確認してください。';
+        }
+        if (version === personnelRequest) loadPersonnel(message);
+    });
+
     function selectPage(next) {
-        if (!['home', 'charts', 'shop', 'settings', 'resources'].includes(next)) return;
+        if (next !== 'shop' && shopDrag) clearShopDrag();
+        if (!['home', 'charts', 'shop', 'personnel', 'settings', 'resources'].includes(next)) return;
         if (next === 'resources' && !isAdmin) return;
+        if (next === 'personnel' && !canManagePersonnel) return;
+        if (page === 'personnel' && next !== page) resetPersonnel();
         if (next !== page && (page === 'charts' || next === 'charts')) resetCharts();
         if (page === 'home' || next === 'home') resetHome();
+        if (next === 'shop' && page !== 'shop') shopSearch.value = '';
         page = next;
-        for (const id of ['home', 'charts', 'shop', 'settings', 'resources']) element(id).hidden = id !== page;
+        for (const id of ['home', 'charts', 'shop', 'personnel', 'settings', 'resources']) element(id).hidden = id !== page;
         element('admin-link').hidden = !isAdmin;
-        document.querySelectorAll('[data-page]').forEach((button) => {
+        document.querySelectorAll('.tablet-sidebar [data-page]').forEach((button) => {
             const selected = button.dataset.page === page;
-            button.classList.toggle('selected', selected);
-            button.setAttribute('aria-current', selected ? 'page' : 'false');
+            const parent = page === 'resources' && button.dataset.page === 'settings';
+            button.classList.toggle('selected', selected || parent);
+            button.setAttribute('aria-current', selected ? 'page' : parent ? 'location' : 'false');
         });
         if (page === 'home') loadHome();
         if (page === 'shop') loadShop();
+        if (page === 'personnel') loadPersonnel();
         if (page === 'resources') refreshResources();
         if (page === 'settings') loadAccess(request);
     }
@@ -470,11 +692,15 @@
             const result = preview ? { ok: true, admin: false } : await post('tabletAccess');
             if (!opened || version !== request) return;
             if (!result.ok) throw new Error(result.error || 'unavailable');
-            isAdmin = result.ok === true && result.admin === true;
+            isAdmin = result.admin === true;
+            canManagePersonnel = result.personnel === true;
+            element('personnel-link').hidden = !canManagePersonnel;
             element('admin-link').hidden = !isAdmin;
         } catch {
             if (opened && version === request) {
                 isAdmin = false;
+                canManagePersonnel = false;
+                element('personnel-link').hidden = true;
                 element('admin-link').hidden = true;
                 status('管理者権限を確認できませんでした。タブレットを開き直してください。');
             }
@@ -584,6 +810,7 @@
         }
     }
     function setVisible(visible) {
+        if (!visible) clearShopDrag();
         opened = visible;
         animateTablet(visible);
         const version = ++request;
@@ -593,6 +820,9 @@
         operating = false;
         element('resource-status').dataset.phase = '';
         isAdmin = false;
+        canManagePersonnel = false;
+        element('personnel-link').hidden = true;
+        resetPersonnel();
         element('admin-link').hidden = true;
         element('refresh').disabled = false;
         element('resource-list').replaceChildren();
@@ -602,12 +832,21 @@
     async function close() {
         if (!opened) return;
         if (preview) { setVisible(false); return; }
-        try { await post('tabletClose'); setVisible(false); }
-        catch { status('閉じられませんでした。Esc またはホームボタンでもう一度お試しください。'); }
+        const generation = openGeneration;
+        try { await post('tabletClose', { generation }); }
+        catch {
+            if (opened && openGeneration === generation) {
+                status('閉じられませんでした。Esc またはホームボタンでもう一度お試しください。');
+            }
+        }
     }
     window.addEventListener('message', ({ data }) => {
         if (data?.action === 'progress:theme') applyProgressTheme(data.theme);
-        if (data?.action === 'tablet:open') setVisible(true);
+        if (data?.action === 'tablet:open') {
+            openGeneration = data.generation;
+            setVisible(true);
+            if (!preview) post('tabletOpened', { generation: openGeneration }).catch(console.error);
+        }
         if (data?.action === 'tablet:close') setVisible(false);
     });
     window.addEventListener('keydown', (event) => {

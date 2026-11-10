@@ -164,7 +164,7 @@ end
 function MedicalUI.openCharts(targetId, chartId, openTreatment)
     MedicalUI.close()
     local request = chartSession
-    local ok, access = pcall(lib.callback.await, 'ptech_mediora_medical:managerAccess', false, true)
+    local ok, access = pcall(lib.callback.await, 'ptech_mediora_medical:managerAccess', false, true, targetId)
     if request ~= chartSession then return end
     if not ok or not access or access.error then
         lib.notify({ title = 'カルテ', description = ok and access and access.error or 'カルテを開けません', type = 'error' })

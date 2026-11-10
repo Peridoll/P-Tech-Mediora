@@ -125,7 +125,8 @@ function issuedDate(value) {
 }
 
 const treatmentImages = { bandage: 'bandage', forceps: 'surgicalforceps', needle: 'needleandthread', health: 'firstaidkit', beat: 'icepack', shot: 'bulletextractionkit', stabbed: 'suturekit', burned: 'burncream' };
-const treatmentImage = kind => 'https://cfx-nui-ox_inventory/web/images/' + (kind.startsWith('pmediora_') ? kind : 'pmediora_' + treatmentImages[kind]) + '.png';
+const treatmentImageAliases = { pmediora_coolingspray: 'pmediora_icepack', pmediora_medicatedbandage: 'pmediora_bandage', pmediora_protectivecast: 'pmediora_splint', pmediora_painkiller: 'pmediora_firstaidkit', pmediora_hemostatic: 'pmediora_firstaidkit' };
+const treatmentImage = kind => 'https://cfx-nui-ox_inventory/web/images/' + (kind.startsWith('pmediora_') ? treatmentImageAliases[kind] || kind : 'pmediora_' + treatmentImages[kind]) + '.png';
 
 const calloutPositions = {
   head: [0, 13], upper_body: [1, 25], lower_body: [0, 45],
@@ -305,6 +306,7 @@ function renderCharts(result, preferredId, openTreatment) {
       if (definitions[item.name]?.heal && result.vitals?.health < 100 && !result.vitals?.down) {
         const option = new Option('体力／' + item.label, 'health:' + item.name);
         option.dataset.part = 'health'; option.dataset.kind = item.name;
+        option.dataset.wholeBody = 'true';
         selectInjury.add(option);
       }
       const ivCase = result.canReceiveIV && nativeRows.find(row => definitions[item.name]?.ivRecovery?.[row.kind]);
@@ -381,7 +383,9 @@ function renderCharts(result, preferredId, openTreatment) {
     const treatmentRegions = [...regions, health];
     let hoveredRegion, hoveredWholeBody = false;
     const matching = (part, kind) => Array.from(selectInjury.options).filter(option =>
-      option.dataset.kind === kind && (option.dataset.wholeBody === 'true' ? Object.hasOwn(bodyNames, part) : option.dataset.part === part));
+      option.dataset.kind === kind && (option.dataset.wholeBody === 'true' && Object.hasOwn(bodyNames, part)
+        || option.dataset.wholeBody !== 'true' && option.dataset.part === part
+        || part === 'health' && option.dataset.part === 'health'));
     const updateMap = () => {
       const options = Array.from(selectInjury.options);
       for (const region of treatmentRegions) {
@@ -525,7 +529,7 @@ function renderCharts(result, preferredId, openTreatment) {
     const sendBill = byId('chart-billing-submit');
     let submittingBill = false;
     const reviveFees = { field: 800000, hospital: 400000, police: 300000, jail: 200000 };
-    bill.disabled = archived || !!chart.invoiceId || !(chart.totalCharge > 0 || chart.revived || chart.unpriced);
+    bill.disabled = result.canBill === false || archived || !!chart.invoiceId || !(chart.totalCharge > 0 || chart.revived || chart.unpriced);
     const updateTotal = () => {
       const manual = mode.value === 'manual';
       byId('chart-billing-amount-field').hidden = !manual;

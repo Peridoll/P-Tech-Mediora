@@ -127,7 +127,7 @@ local function startDiagnosis(target)
     activeExamination = examination
     local authorizedTarget
     local ok, err = pcall(function()
-        if not Medical.allowed(exports.qbx_core:GetPlayerData()) then
+        if not Medical.allowed(exports.qbx_core:GetPlayerData()) and target ~= GetPlayerServerId(PlayerId()) then
             notify('勤務中の医療職のみ利用できます'); return
         end
         if not target then target = nearby() end
@@ -286,6 +286,11 @@ local function handleCommand(_, args)
 end
 
 RegisterCommand(Config.Commands.Name, handleCommand, false)
+
+RegisterNetEvent('ptech_mediora_medical:diagnoseSelf', function()
+    if source ~= 65535 then return end
+    startDiagnosis(GetPlayerServerId(PlayerId()))
+end)
 
 exports('getTreatmentItems', function()
     return {}

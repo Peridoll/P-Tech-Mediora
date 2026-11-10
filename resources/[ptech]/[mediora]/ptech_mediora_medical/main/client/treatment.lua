@@ -84,7 +84,7 @@ end
 
 -- ox_inventoryのclient.export。consume=0で定義し、成功後のRemoveItemだけで消費する。
 -- useItemを重ねて呼ぶと二重消費になるため呼ばない。所持・使用権限はサーバーで検証する。
-exports('useMedicalItem', function(item)
+local function useMedicalItem(item)
     local name = type(item) == 'table' and item.name
     local spec = name and Config.Wounds.Items[name]
     if not spec then return end
@@ -98,7 +98,9 @@ exports('useMedicalItem', function(item)
     if #fields > 0 then local answer = lib.inputDialog(spec.label, fields); if not answer then return end; part = answer[1] end
     local response = T.treat({ targetId = GetPlayerServerId(PlayerId()), part = part, item = name, selfUse = true })
     lib.notify({ title = spec.label, description = response.error or '処置が完了しました', type = response.error and 'error' or 'success' })
-end)
+end
+
+exports('useMedicalItem', useMedicalItem)
 
 AddEventHandler('QBCore:Client:OnPlayerUnload', T.cancel)
 AddEventHandler('onResourceStop', function(name) if name == GetCurrentResourceName() then T.cancel() end end)

@@ -69,18 +69,21 @@
     <div id="tablet" hidden>
         <section class="tablet-device" role="dialog" aria-modal="true" aria-label="Mediora タブレット">
             <div id="tablet-shutter" aria-hidden="true"></div>
-            <button id="tablet-home-button" type="button" aria-label="タブレットを閉じる"></button>
+            <button id="tablet-home-button" type="button" aria-label="タブレットを閉じる" title="タブレットを閉じる (Esc)"></button>
             <div class="tablet-rail">
                 <aside class="tablet-sidebar">
-                    <div class="tablet-brand" aria-label="Mediora"><b>M</b><span>EDIORA</span></div>
+                    <div class="tablet-brand" role="img" aria-label="P-Tech Mediora">
+                        <b>M</b>
+                        <span class="tablet-brand-wordmark"><small>P-Tech</small><strong>EDIORA</strong></span>
+                    </div>
                     <nav class="tablet-navigation" aria-label="タブレットメニュー">
-                        <button data-page="home" class="selected" aria-label="ホーム"><i aria-hidden="true">⌂</i><span>ホーム</span></button>
-                        <button data-page="charts" aria-label="カルテ"><i aria-hidden="true">▤</i><span>カルテ</span></button>
-                        <button data-page="shop" aria-label="物資"><i aria-hidden="true">▦</i><span>物資</span></button>
+                        <button data-page="home" class="selected" aria-label="ホーム" title="ホーム"><i aria-hidden="true">⌂</i><span>ホーム</span></button>
+                        <button data-page="charts" aria-label="カルテ" title="カルテ"><i aria-hidden="true">▤</i><span>カルテ</span></button>
+                        <button data-page="shop" aria-label="物資購入" title="物資購入"><i aria-hidden="true"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h3l2.5 12h12l2-8H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg></i><span>物資購入</span></button>
+                        <button id="tablet-personnel-link" type="button" data-page="personnel" aria-label="マネジメント" title="マネジメント" hidden><i aria-hidden="true">♙</i><span>マネジメント</span></button>
                     </nav>
                     <div class="tablet-sidebar-bottom">
-                        <button id="tablet-admin-link" data-page="resources" aria-label="リソース管理" hidden><i aria-hidden="true">⚒</i><span>リソース管理</span><small>ADMIN</small></button>
-                        <button data-page="settings" aria-label="設定"><i aria-hidden="true">⚙</i><span>設定</span></button>
+                        <button data-page="settings" aria-label="設定" title="設定"><i aria-hidden="true">⚙</i><span>設定</span></button>
                     </div>
                 </aside>
             </div>
@@ -107,43 +110,84 @@
                 <section id="tablet-charts" class="tablet-page" hidden>
                     <h1>カルテ確認</h1>
                     <form id="tablet-chart-search" class="tablet-chart-search">
-                        <label for="tablet-chart-patient-id">患者のサーバーID</label>
-                        <div><input id="tablet-chart-patient-id" type="number" min="1" step="1" inputmode="numeric" required><button id="tablet-chart-submit" type="submit">照会</button></div>
+                        <label for="tablet-chart-patient-id">患者名またはサーバーID</label>
+                        <div><input id="tablet-chart-patient-id" type="text" list="tablet-chart-patients" autocomplete="off" required><datalist id="tablet-chart-patients"></datalist><button id="tablet-chart-submit" type="submit">照会</button></div>
                     </form>
                     <p id="tablet-chart-status" role="status" aria-live="polite"></p>
                     <div id="tablet-chart-results" hidden>
                         <h2 id="tablet-chart-patient"></h2>
                         <label for="tablet-chart-history">診察履歴</label>
                         <select id="tablet-chart-history"></select>
-                        <button id="tablet-chart-open" type="button">カルテを開く</button>
+                        <button id="tablet-chart-open" type="button">Medicalで開く</button>
                         <article class="tablet-chart-record">
                             <h3>診察記録</h3>
                             <p id="tablet-chart-condition"></p>
+                            <p id="tablet-chart-billing"></p>
                             <ul id="tablet-chart-injuries" aria-label="記録された負傷"></ul>
                         </article>
                     </div>
                 </section>
                 <section id="tablet-shop" class="tablet-page" hidden>
-                    <h1>医療物資ストア</h1>
+                    <div class="shop-hero">
+                        <span class="shop-brand">MEDIORA SUPPLY</span>
+                        <h1>医療物資ストア</h1>
+                        <span class="shop-pickup">ピルボックス受取</span>
+                    </div>
                     <p>注文時にお支払い。ピルボックスの物資窓口で24時間以内に受け取れます。期限を過ぎた未受取の注文は返金されます。</p>
                     <p id="tablet-shop-status" class="tablet-muted" role="status"></p>
                     <div class="shop-layout">
                         <section class="shop-catalog" aria-label="医療アイテム一覧">
-                            <h2>医療アイテム</h2>
+                            <div class="shop-heading">
+                                <h2>医療アイテム</h2>
+                                <span id="tablet-shop-results" aria-live="polite"></span>
+                            </div>
+                            <input id="tablet-shop-search" type="search" aria-label="商品を検索" placeholder="商品名・対応する傷で検索">
+                            <p id="tablet-shop-no-results" class="shop-empty" hidden>該当する商品がありません。</p>
                             <div id="tablet-shop-items" class="shop-items"></div>
                         </section>
                         <section id="tablet-shop-dropzone" class="shop-cart" aria-label="ショッピングカート">
-                            <h2>ショッピングカート</h2>
+                            <div class="shop-heading">
+                                <h2>ショッピングカート</h2>
+                                <span id="tablet-shop-count"></span>
+                            </div>
                             <p id="tablet-shop-empty" class="shop-empty">ここに商品をドラッグ</p>
                             <ul id="tablet-shop-cart"></ul>
                             <div class="shop-checkout">
-                                <strong id="tablet-shop-total" aria-live="polite"></strong>
+                                <div class="shop-summary"><span>お支払い合計</span><strong id="tablet-shop-total" aria-live="polite"></strong></div>
                                 <button id="tablet-shop-place" type="button" disabled>支払って購入</button>
                             </div>
                         </section>
                     </div>
                     <h2>注文履歴</h2>
                     <ul id="tablet-shop-orders"></ul>
+                </section>
+                <section id="tablet-personnel" class="tablet-page" aria-label="隊員管理" hidden>
+                    <div class="tablet-page-heading">
+                        <div><h1>隊員管理</h1><p class="tablet-muted">所属隊員の名簿と人事手続き</p></div>
+                        <div class="personnel-actions">
+                            <button id="tablet-personnel-back" type="button">ホームへ</button>
+                            <button id="tablet-personnel-refresh" type="button">更新</button>
+                        </div>
+                    </div>
+                    <p id="tablet-personnel-status" class="tablet-muted" role="status"></p>
+                    <div id="tablet-personnel-confirm" class="personnel-confirm" hidden>
+                        <p id="tablet-personnel-confirm-text"></p>
+                        <div class="personnel-actions">
+                            <button id="tablet-personnel-cancel" type="button">キャンセル</button>
+                            <button id="tablet-personnel-submit" type="button">確定する</button>
+                        </div>
+                    </div>
+                    <div id="tablet-personnel-content" hidden>
+                        <h2>隊員名簿</h2>
+                        <p id="tablet-personnel-empty" class="tablet-muted" hidden>所属隊員がいません。</p>
+                        <ul id="tablet-personnel-list"></ul>
+                        <h2>新規採用</h2>
+                        <div class="personnel-actions">
+                            <select id="tablet-personnel-candidate" aria-label="採用するプレイヤー"></select>
+                            <select id="tablet-personnel-hire-grade" aria-label="採用時の階級"></select>
+                            <button id="tablet-personnel-hire" type="button" disabled>採用</button>
+                        </div>
+                    </div>
                 </section>
                 <section id="tablet-settings" class="tablet-page" hidden>
                     <h1>設定</h1>
@@ -166,9 +210,12 @@
                         </div>
                         <p id="tablet-progress-status" class="tablet-muted" role="status"></p>
                     </div>
+                    <div class="tablet-settings-admin">
+                        <button id="tablet-admin-link" type="button" data-page="resources" hidden>⚒ リソース管理</button>
+                    </div>
                 </section>
                 <section id="tablet-resources" class="tablet-page" hidden>
-                    <div class="tablet-page-heading"><div><h1>リソース管理</h1><p class="tablet-muted">Mediora リソースの稼働状況</p></div><button id="tablet-refresh">更新</button></div>
+                    <div class="tablet-page-heading"><div><h1>リソース管理</h1><p class="tablet-muted">Mediora リソースの稼働状況</p></div><div class="tablet-resource-navigation"><button type="button" data-page="settings">設定へ戻る</button><button id="tablet-refresh" type="button">更新</button></div></div>
                     <p id="tablet-resource-status" role="status" aria-live="polite"></p>
                     <ul id="tablet-resource-list" aria-label="リソース一覧"></ul>
                 </section>

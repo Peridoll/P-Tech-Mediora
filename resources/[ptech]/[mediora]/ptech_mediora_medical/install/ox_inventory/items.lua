@@ -6,36 +6,19 @@
 -- 他の道具は勤務中の医療職がMedicalカルテから患者へ使用する（画像は任意）。
 -- このファイルは既存の return { ... } に統合する項目の抜粋。
 
-    -- ['pmediora_firstaidkit'] = { label = '救急キット', weight = 500, stack = true, close = true, consume = 0,
-    --     client = { export = 'ptech_mediora_medical.useMedicalItem' } },
-    -- ['pmediora_bandage'] = { label = '医療用包帯', weight = 100, stack = true, close = true, consume = 0,
-    --     client = { export = 'ptech_mediora_medical.useMedicalItem' } },
-    -- ['pmediora_painkiller'] = { label = '鎮痛剤', weight = 30, stack = true, close = true, consume = 0,
-    --     client = { export = 'ptech_mediora_medical.useMedicalItem' } },
-    -- ['pmediora_hemostatic'] = { label = '止血剤', weight = 30, stack = true, close = true, consume = 0,
-    --     client = { export = 'ptech_mediora_medical.useMedicalItem' } },
-    -- ['pmediora_icepack'] = { label = '冷却パック', weight = 100, stack = true, close = true, consume = 0 },
-    -- ['pmediora_coolingspray'] = { label = '冷却スプレー', weight = 150, stack = true, close = true, consume = 0 },
-    -- ['pmediora_suturekit'] = { label = '縫合キット', weight = 200, stack = true, close = true, consume = 0 },
-    -- ['pmediora_needleandthread'] = { label = '針と糸', weight = 50, stack = true, close = true, consume = 0 },
-    -- ['pmediora_bulletextractionkit'] = { label = '弾丸摘出キット', weight = 200, stack = true, close = true, consume = 0 },
-    -- ['pmediora_surgicalforceps'] = { label = '医療用ピンセット', weight = 100, stack = true, close = true, consume = 0 },
-    -- ['pmediora_burncream'] = { label = '火傷クリーム', weight = 100, stack = true, close = true, consume = 0 },
-    -- ['pmediora_medicatedbandage'] = { label = '薬品包帯', weight = 100, stack = true, close = true, consume = 0 },
-    -- ['pmediora_protectivecast'] = { label = '保護ギプス', weight = 300, stack = true, close = true, consume = 0 },
-
-
   ['pmediora_defibrillator'] = {
     label = '除細動器', englishLabel = 'AED', description = '患者の蘇生に使用する',
     weight = 1500, stack = false, buyPrice = nil, sellPrice = nil,
     effect = { type = 'revive' },
   },
   ['pmediora_firstaidkit'] = {
+    close = true, consume = 0, client = { export = 'ptech_mediora_medical.useMedicalItem' },
     label = '救急キット', englishLabel = 'First Aid Kit', description = '体力を大幅に回復させる',
     weight = 1000, stack = true, buyPrice = 300000, sellPrice = 60000,
     effect = { type = 'heal', percent = 100 },
   },
   ['pmediora_bandage'] = {
+    close = true, consume = 0, client = { export = 'ptech_mediora_medical.useMedicalItem' },
     label = '包帯', englishLabel = 'Bandage', description = '出血を止め、体力を少量回復させる',
     weight = 100, stack = true, buyPrice = 50000, sellPrice = 10000,
     effect = { type = 'heal', percent = 15, clearBleeding = true },
@@ -74,6 +57,26 @@
     label = '火傷クリーム', englishLabel = 'Burn Cream', description = '火傷の炎症を抑える薬',
     weight = 150, stack = true, buyPrice = 100000, sellPrice = 20000,
     effect = { type = 'treat_injury', injury = 'burned' },
+  },
+  ['pmediora_coolingspray'] = {
+    label = '冷却スプレー', weight = 150, stack = true, close = true, consume = 0,
+    client = { image = 'pmediora_icepack.png' },
+  },
+  ['pmediora_medicatedbandage'] = {
+    label = '薬品包帯', weight = 100, stack = true, close = true, consume = 0,
+    client = { image = 'pmediora_bandage.png' },
+  },
+  ['pmediora_protectivecast'] = {
+    label = '保護ギプス', weight = 300, stack = true, close = true, consume = 0,
+    client = { image = 'pmediora_splint.png' },
+  },
+  ['pmediora_painkiller'] = {
+    label = '鎮痛剤', weight = 30, stack = true, close = true, consume = 0,
+    client = { image = 'pmediora_firstaidkit.png', export = 'ptech_mediora_medical.useMedicalItem' },
+  },
+  ['pmediora_hemostatic'] = {
+    label = '止血剤', weight = 30, stack = true, close = true, consume = 0,
+    client = { image = 'pmediora_firstaidkit.png', export = 'ptech_mediora_medical.useMedicalItem' },
   },
   ['pmediora_ivdrip'] = {
     label = '点滴', description = '医療職が餓死・溺死の患者に使用する。餓死では空腹も回復する。',

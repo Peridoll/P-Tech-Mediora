@@ -32,6 +32,8 @@ Config.ActivityTracking = {
 
 Config.Tablet = {
     item = 'pmediora_tablet',
+    -- Minimum Qbox job grade for tablet personnel management, by job.
+    personnelMinGrades = { ambulance = 3 },
     -- Optional dedicated permission; existing Qbox admin/god ACEs also work.
     adminAce = 'mediora.admin',
     adminAces = { 'admin', 'god' },

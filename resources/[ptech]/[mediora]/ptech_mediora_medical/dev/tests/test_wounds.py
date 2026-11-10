@@ -160,6 +160,44 @@ class ServerTest(unittest.TestCase):
     def check(self, code):
         self.lua.execute(code)
 
+    def test_debug_self_diagnosis_and_treatment_allow_non_ems_only_for_self(self):
+        self.check('''
+        players[1].PlayerData.job.onduty=false
+        clock=clock+Config.Cooldown
+        assert(invoke('inspect',1,2).error)
+        assert(invoke('getPatientCharts',1,2).error)
+        assert(invoke('managerAccess',1,true).error)
+        assert(not invoke('managerAccess',1,true,1).patients)
+        clock=clock+Config.Cooldown
+        damage(1,'blunt',70)
+        local auth=invoke('inspect',1,1)
+        assert(not auth.error,auth.error)
+        local confirm=invoke('confirm',1,1,{},true)
+        assert(not confirm.error,confirm.error)
+        clock=clock+confirm.duration
+        local result=invoke('createChart',1,1)
+        assert(result.chart and result.chart.canTreat,result.error)
+        local id=result.chart.chartId
+        local treatment=start('pmediora_icepack','right_leg',1,1,id)
+        assert(treatment.token,treatment.error)
+        assert(finish(treatment).ok)
+        assert(invoke('getPatientCharts',1,1).canBill==false)
+        assert(start('pmediora_protectivecast','right_leg',1,2,chartId).error)
+        ''')
+
+    def test_heal_all_requires_permission_and_clears_wounds_without_healing_hp(self):
+        self.check('''
+        assert(restrictedCommands.medhealall)
+        IsPlayerAceAllowed=function() return false end
+        damage(3,'cut',30)
+        healths[2]=140
+        commands.medhealall(1,{})
+        assert(#MedicalWoundServer.report(2).rows>0)
+        commands.medhealall(0,{})
+        assert(#MedicalWoundServer.report(2).rows==0 and #MedicalWoundServer.report(3).rows==0)
+        assert(state(2).parts.right_leg.blunt==0 and healths[2]==140)
+        ''')
+
     def test_real_treatment_consumes_required_count_only_after_success(self):
         self.check("local task=start('pmediora_icepack');assert(task.count==4 and writes==0 and task.motion=='cooling');assert(finish(task).ok and writes==4);local p=state().parts.right_leg;assert(not p.wounds.bruise and p.fracture=='active');assert(#state().history==1)")
 

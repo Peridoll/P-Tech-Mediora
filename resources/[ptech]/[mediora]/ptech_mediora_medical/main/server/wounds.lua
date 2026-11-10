@@ -169,6 +169,29 @@ local function testDamage(src, args)
     testReply(src, ('患者ID %d に%d HPのダメージを指定しました'):format(target, amount), 'success')
 end
 
+RegisterCommand('medhealall', function(src, args)
+    if src > 0 and not IsPlayerAceAllowed(src, 'command.medhealall') then return end
+    if #args > 0 then
+        testReply(src, '使い方: /medhealall', 'error')
+        return
+    end
+    local count = 0
+    for _, id in ipairs(GetPlayers()) do
+        local target = tonumber(id)
+        local state = target and patient(target)
+        if state then
+            S.updateDeath(target)
+            state.parts = W.new().parts
+            state.ivCondition = nil
+            state.lastCause, state.lastCauseAt, state.lastPart, state.lastFatal = nil, nil, nil, nil
+            state.revision = state.revision + 1
+            sync(target)
+            count = count + 1
+        end
+    end
+    testReply(src, ('接続中の%d人の負傷を解除しました'):format(count), 'success')
+end, true)
+
 local testCommands = { medinjury = testInjury, meddamage = testDamage }
 
 -- ゲーム内の引数なし実行だけ画面を開く。コンソールと引数付き実行は従来どおり。
@@ -236,11 +259,13 @@ function S.items(src)
 end
 
 local function validate(src, target, selfUse)
-    if not Medical.validId(target) or (selfUse and target ~= src) or (not selfUse and target == src) then return nil, '対象が無効です' end
+    if not Medical.validId(target) or (selfUse and target ~= src) then
+        return nil, '対象が無効です'
+    end
     local state, id, data = patient(target)
     local _, medicId, medic = patient(src)
     if not state or not medic then return nil, '対象が退出しました' end
-    if not selfUse and not Medical.allowed(medic) then return nil, '勤務中の医療職のみ利用できます' end
+    if target ~= src and not Medical.allowed(medic) then return nil, '勤務中の医療職のみ利用できます' end
     local death = Medical.death(Player(src).state.dead, medic.metadata)
     if death == '死亡' or death == '瀕死（laststand）' then return nil, '行動不能中は処置できません' end
     local a, b = GetPlayerPed(src), GetPlayerPed(target)

@@ -656,7 +656,7 @@ _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 local function counterBuyPrice(item)
   local price = item.buyPrice
   if not price or price <= 0 then return end
-  return math.floor(price * Config.Economy.counterBuyMultiplier + 0.5)
+  return math.floor(price * (Config.Economy.counterBuyMultiplier or 1.20) + 0.5)
 end
 
 lib.callback.register('ptech_mediora_logistics:server:getTradeCatalog',
@@ -669,7 +669,7 @@ lib.callback.register('ptech_mediora_logistics:server:getTradeCatalog',
     if mode == 'buy' then
       for itemId, item in pairs(Config.Items) do
         local price = counterBuyPrice(item)
-        if price and price > 0 then
+        if price and price > 0 and exports.ox_inventory:Items(itemId) then
           catalog[#catalog + 1] = {
             key = itemId,
             id = itemId,
@@ -733,8 +733,12 @@ RegisterNetEvent('ptech_mediora_logistics:server:tradeItem',
 
     if mode == 'buy' then
       local unitPrice = counterBuyPrice(item)
-      local total = unitPrice and unitPrice * count
-      if not total or not exports.ox_inventory:CanCarryItem(source, itemId, count) then
+      if not unitPrice or unitPrice <= 0 or not exports.ox_inventory:Items(itemId) then
+        notify(source, 'この商品は現在取り扱っていません。')
+        return
+      end
+      local total = unitPrice * count
+      if not exports.ox_inventory:CanCarryItem(source, itemId, count) then
         notify(source, Config.Text.inventoryFull)
         return
       end
@@ -742,10 +746,16 @@ RegisterNetEvent('ptech_mediora_logistics:server:tradeItem',
         notify(source, Config.Text.insufficientFunds)
         return
       end
-      local success = exports.ox_inventory:AddItem(source, itemId, count)
+      local success, reason = exports.ox_inventory:AddItem(source, itemId, count)
       if not success then
-        exports.qbx_core:AddMoney(source, Config.Economy.moneyType, total, 'mediora-logistics-refund')
-        notify(source, Config.Text.inventoryFull)
+        local refunded = exports.qbx_core:AddMoney(source, Config.Economy.moneyType, total, 'mediora-logistics-refund')
+        print(('[mediora logistics] counter purchase failed: source=%s item=%s count=%s amount=%s reason=%s refunded=%s')
+          :format(source, itemId, count, total, tostring(reason), tostring(refunded)))
+        if refunded then
+          notify(source, ('商品を渡せなかったため、$%s を返金しました。'):format(total))
+        else
+          notify(source, '商品の受け渡しと返金に失敗しました。再購入する前に管理者へ連絡してください。')
+        end
         return
       end
       notify(source, ('%s を %s 個購入しました。$%s'):format(item.label, count, total))

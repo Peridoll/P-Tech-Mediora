@@ -1,4 +1,5 @@
 local opened = false
+local focused = false
 local ready = false
 local generation = 0
 local usingItem = false
@@ -17,11 +18,13 @@ local function closeTablet(keepFocus)
     if not opened then return end
     opened = false
     generation = generation + 1
-    if keepFocus ~= true then SetNuiFocus(false, false) end
+    if focused and keepFocus ~= true then SetNuiFocus(false, false) end
+    focused = false
     SendNUIMessage({ action = 'tablet:close' })
 end
 
 local function openTablet()
+    if opened then return false end
     if not ready then
         lib.notify({ type = 'error', description = 'タブレット画面の準備ができていません。Coreの起動ログを確認してください。' })
         return false
@@ -33,8 +36,14 @@ local function openTablet()
     end
     exports.ox_inventory:closeInventory()
     opened = true
-    SetNuiFocus(true, true)
-    SendNUIMessage({ action = 'tablet:open' })
+    generation = generation + 1
+    local openingGeneration = generation
+    SendNUIMessage({ action = 'tablet:open', generation = openingGeneration })
+    SetTimeout(2000, function()
+        if not opened or focused or generation ~= openingGeneration then return end
+        closeTablet()
+        lib.notify({ type = 'error', description = 'タブレットを開けませんでした。もう一度お試しください。' })
+    end)
     return true
 end
 
@@ -87,9 +96,39 @@ RegisterNUICallback('tabletProgressTheme', function(data, cb)
     cb({ ok = true, theme = theme })
 end)
 
-RegisterNUICallback('tabletClose', function(_, cb)
-    closeTablet()
+RegisterNUICallback('tabletOpened', function(data, cb)
+    local openingGeneration = type(data) == 'table' and data.generation
+    -- Give the inventory time to finish releasing its focus.
+    while opened and not focused and generation == openingGeneration do
+        if not IsNuiFocused() and not IsPauseMenuActive() then
+            SetNuiFocus(true, true)
+            focused = true
+            break
+        end
+        Wait(25)
+    end
+    cb({ ok = opened and focused and generation == openingGeneration })
+end)
+
+RegisterNUICallback('tabletClose', function(data, cb)
+    if type(data) == 'table' and data.generation == generation then closeTablet() end
     cb({ ok = true })
+end)
+
+RegisterCommand('mediora_tablet_close', function()
+    closeTablet()
+end, false)
+
+RegisterNUICallback('tabletChartPatients', function(_, cb)
+    if not opened or GetResourceState('ptech_mediora_medical') ~= 'started' then
+        cb({ error = 'Medicalのカルテを照会できません' }); return
+    end
+    local requestGeneration = generation
+    local ok, result = pcall(lib.callback.await, 'ptech_mediora_medical:managerAccess', false, true)
+    if not opened or requestGeneration ~= generation then
+        cb({ error = 'カルテの照会を終了しました' }); return
+    end
+    cb(ok and type(result) == 'table' and result or { error = '患者候補を取得できません' })
 end)
 
 RegisterNUICallback('tabletCharts', function(data, cb)
@@ -142,7 +181,7 @@ RegisterNUICallback('tabletOpenChart', function(data, cb)
 end)
 
 exports('openTablet', openTablet)
-for _, route in ipairs({ 'tabletAccess', 'tabletHome', 'tabletResources', 'tabletResourceAction' }) do
+for _, route in ipairs({ 'tabletAccess', 'tabletHome', 'tabletPersonnel', 'tabletPersonnelAction', 'tabletResources', 'tabletResourceAction' }) do
     local callbackRoute = route
     RegisterNUICallback(callbackRoute, function(data, cb)
         if not opened then cb({ ok = false, error = 'closed' }) return end
@@ -168,7 +207,10 @@ for route, action in pairs(shopRoutes) do
             return
         end
         local ok, result = pcall(lib.callback.await, 'ptech_mediora_logistics:orders:' .. action, false, data)
-        cb(ok and result or { ok = false, error = '注文結果を確認できません。注文履歴を確認してください。' })
+        if not ok then
+            print(('[ptech_mediora_core] shop %s callback failed: %s'):format(action, tostring(result)))
+        end
+        cb(ok and type(result) == 'table' and result or { ok = false, error = '注文結果を確認できません。注文履歴を確認してください。' })
     end)
 end
 

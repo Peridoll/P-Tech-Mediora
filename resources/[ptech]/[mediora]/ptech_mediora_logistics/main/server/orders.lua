@@ -1,4 +1,5 @@
 local ready = false
+print(('[mediora orders] build=20261111-catalog-2 path=%s'):format(GetResourcePath(GetCurrentResourceName())))
 local ttl = 24 * 60 * 60
 local ox = exports.ox_inventory
 local qbx = exports.qbx_core
@@ -10,14 +11,14 @@ local function failure(message)
   return { ok = false, error = message }
 end
 
-local function character(source, requireAccess)
+local function character(source, access)
   local player = qbx:GetPlayer(source)
   local data = player and player.PlayerData
   if not data then return end
-  if requireAccess then
+  if access then
     local job = data.job
     if not job or (next(Config.AllowedJobs or {}) and not Config.AllowedJobs[job.name])
-        or (Config.RequireOnDuty and not job.onduty) then return end
+        or (access == 'pickup' and Config.RequireOnDuty and not job.onduty) then return end
   end
   return data
 end
@@ -108,6 +109,7 @@ MySQL.ready(function()
     print(('[mediora orders] order #%s requires reconciliation (%s)'):format(row.id, row.status))
   end
   ready = true
+  print('[mediora orders] build=20261111-catalog-2 database ready')
   CreateThread(function()
     while true do
       local ok, err = pcall(function()
@@ -160,13 +162,15 @@ local injuryLabels = {
 }
 
 lib.callback.register(prefix .. 'catalog', function(source)
-  local data = ready and character(source, true)
-  if not data then return failure('勤務中の救急職で利用できます。') end
+  if not ready then return failure('注文データベースの準備ができていません。') end
+  local data = character(source, 'tablet')
+  if not data then return failure('救急職で利用できます。') end
   local catalog = {}
   for id, item in pairs(Config.Items) do
-    if item.buyPrice and item.buyPrice > 0 and ox:Items(id) then
+    if item.buyPrice and item.buyPrice > 0 then
+      local available = type(ox:Items(id)) == 'table'
       local effect = item.effect or {}
-      local treatment = injuryLabels[effect.injury]
+      local treatment = item.treatment or injuryLabels[effect.injury]
       if effect.type == 'heal' then
         treatment = effect.clearBleeding and '出血・体力回復' or '体力回復'
       end
@@ -174,18 +178,23 @@ lib.callback.register(prefix .. 'catalog', function(source)
         id = id,
         label = item.label,
         description = item.description,
+        image = item.image,
         treatment = treatment,
         price = item.buyPrice,
-        owned = ox:GetItemCount(source, id) or 0,
+        available = available,
+        owned = available and (ox:GetItemCount(source, id) or 0) or 0,
       }
     end
   end
   table.sort(catalog, function(a, b) return a.label < b.label end)
-  return { ok = true, items = catalog, orders = history(data.citizenid), limit = Config.Economy.maxTransactionItems }
+  local ok, orders = pcall(history, data.citizenid)
+  if not ok then print(('[mediora orders] history unavailable: %s'):format(orders)) end
+  return { ok = true, items = catalog, orders = ok and orders or {}, historyUnavailable = not ok,
+    limit = Config.Economy.maxTransactionItems }
 end)
 
 lib.callback.register(prefix .. 'place', function(source, payload)
-  local data = ready and character(source, true)
+  local data = ready and character(source, 'tablet')
   if not data then return failure('現在、注文できません。') end
   if type(payload) ~= 'table' or type(payload.key) ~= 'string' or #payload.key > 64
       or not payload.key:match('^[%w-]+$') or type(payload.cart) ~= 'table' then
@@ -196,7 +205,10 @@ lib.callback.register(prefix .. 'place', function(source, payload)
     local previous = MySQL.single.await(
       'SELECT id, status FROM mediora_logistics_orders WHERE citizenid = ? AND request_key = ?', { citizen, payload.key })
     if previous then
-      if previous.status == 'paying' or previous.status == 'declined' then
+      if previous.status == 'declined' then
+        return { ok = false, error = '前回の決済は不成立でした。もう一度購入できます。', retryWithNewKey = true }
+      end
+      if previous.status == 'paying' then
         return failure('この注文の決済状況を履歴で確認してください。')
       end
       return { ok = true, id = previous.id }
@@ -222,11 +234,12 @@ lib.callback.register(prefix .. 'place', function(source, payload)
       VALUES (?, ?, ?, ?, ?, ?, 'paying')
     ]], { citizen, payload.key, json.encode(items), total, account, os.time() + ttl })
     if not id then return failure('注文を保存できませんでした。') end
-    local current = character(source, true)
+    local current = character(source, 'tablet')
     local balance = current and current.citizenid == citizen and current.money[account]
     if not balance or balance < total or not qbx:RemoveMoney(source, account, total, 'mediora-order-' .. id) then
-      transition(id, 'paying', 'declined')
-      return failure('支払いが完了しませんでした。')
+      assert(transition(id, 'paying', 'declined'))
+      print(('[mediora orders] payment declined: order=%s account=%s amount=%s'):format(id, account, total))
+      return { ok = false, error = '支払いが成立しませんでした。残高を確認してください。', retryWithNewKey = true }
     end
     if not saveBalance(source, citizen, account, balance - total) then
       print(('[mediora orders] payment #%s requires reconciliation'):format(id))
@@ -250,7 +263,7 @@ end
 ox:registerHook('openInventory', function(payload)
   local stash = tostring(payload.inventoryId):match('^(mediora_order_%d+)')
   if not stash then return end
-  local data = character(payload.source, true)
+  local data = character(payload.source, 'pickup')
   if not data or pickupOwners[stash] ~= data.citizenid or not pickupLocation(payload.source) then return false end
 end)
 
@@ -259,13 +272,13 @@ ox:registerHook('swapItems', function(payload)
 end)
 
 lib.callback.register(prefix .. 'pickupList', function(source)
-  local data = ready and character(source, true)
+  local data = ready and character(source, 'pickup')
   if not data or not pickupLocation(source) then return failure('ピルボックスの窓口で受け取れます。') end
   return { ok = true, orders = history(data.citizenid, true) }
 end)
 
 lib.callback.register(prefix .. 'pickup', function(source, id)
-  local data = ready and character(source, true)
+  local data = ready and character(source, 'pickup')
   if not data or not pickupLocation(source) or type(id) ~= 'number' or id < 1 or id % 1 ~= 0 then
     return failure('ピルボックスの窓口で受け取れます。')
   end
@@ -275,7 +288,7 @@ lib.callback.register(prefix .. 'pickup', function(source, id)
       SELECT items, status, expires_at FROM mediora_logistics_orders WHERE id = ? AND citizenid = ?
     ]], { id, citizen })
     local coords = pickupLocation(source)
-    local current = character(source, true)
+    local current = character(source, 'pickup')
     if not order or not coords or not current or current.citizenid ~= citizen then return failure('注文を確認できません。') end
     local stash = ('mediora_order_%d'):format(id)
     local items = json.decode(order.items)

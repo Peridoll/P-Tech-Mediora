@@ -45,9 +45,9 @@ local function identity(data)
     return name ~= '' and name:sub(1, 60) or '氏名未登録'
 end
 
-local function allowedMedic(source)
+local function allowedMedic(source, target)
     local player = exports.qbx_core:GetPlayer(source)
-    if not player or not Medical.allowed(player.PlayerData) then return nil, '勤務中の医療職のみ利用できます' end
+    if not player or (target ~= source and not Medical.allowed(player.PlayerData)) then return nil, '勤務中の医療職のみ利用できます' end
     return player
 end
 
@@ -247,13 +247,13 @@ local function historicalCharts(patientId)
 end
 
 local function inspect(src, target)
-    if type(target) ~= 'number' or target ~= target or target % 1 ~= 0 or target <= 0 or target == src then
+    if not Medical.validId(target) then
         return { error = '対象が無効です' }
     end
     if GetResourceState('wasabi_ambulance') ~= 'started' then return { error = 'Wasabiが起動していません' } end
-    local player = exports.qbx_core:GetPlayer(src)
+    local player, error = allowedMedic(src, target)
+    if not player then return { error = error } end
     local patient = exports.qbx_core:GetPlayer(target)
-    if not player or not Medical.allowed(player.PlayerData) then return { error = '勤務中の医療職のみ利用できます' } end
     if not patient then return { error = '対象が退出しました' } end
     local own = Medical.death(Player(src).state.dead, player.PlayerData.metadata)
     if own == '死亡' or own == '瀕死（laststand）' then return { error = '行動不能中は診察できません' } end
@@ -265,6 +265,12 @@ local function inspect(src, target)
     end
     return { target = target, death = Medical.death(Player(target).state.dead, patient.PlayerData.metadata) }
 end
+
+RegisterCommand('medself', function(src)
+    if src > 0 then
+        TriggerClientEvent('ptech_mediora_medical:diagnoseSelf', src)
+    end
+end, false)
 
 lib.callback.register('ptech_mediora_medical:inspect', function(src, target)
     local now = GetGameTimer()
@@ -489,11 +495,11 @@ end)
 
 -- EMSManager uses these read-only callbacks. The server remains the authority for
 -- job and duty checks; the client only supplies the online target server ID.
-lib.callback.register('ptech_mediora_medical:managerAccess', function(src, includePatients)
-    local player, error = allowedMedic(src)
+lib.callback.register('ptech_mediora_medical:managerAccess', function(src, includePatients, target)
+    local player, error = allowedMedic(src, target)
     if not player then return { error = error } end
     local access = { name = identity(player.PlayerData) }
-    if includePatients == true then
+    if includePatients == true and Medical.allowed(player.PlayerData) then
         access.patients = {}
         for _, source in ipairs(GetPlayers()) do
             local target = tonumber(source)
@@ -508,16 +514,16 @@ lib.callback.register('ptech_mediora_medical:managerAccess', function(src, inclu
 end)
 
 lib.callback.register('ptech_mediora_medical:getPatientCharts', function(src, target)
-    local medic, error = allowedMedic(src)
-    if error then return { error = error } end
-    local medicId = medic.PlayerData.citizenid
     target = tonumber(target)
-    if not target or target % 1 ~= 0 or target <= 0 then return { error = '患者IDには数字を入力してください' } end
+    if not Medical.validId(target) then return { error = '患者IDには数字を入力してください' } end
+    local medic, error = allowedMedic(src, target)
+    if not medic then return { error = error } end
+    local medicId = medic.PlayerData.citizenid
     local patient = exports.qbx_core:GetPlayer(target)
     if not patient then return { error = 'そのIDのプレイヤーは現在接続していません' } end
     local patientId = patient.PlayerData.citizenid
     local history = historicalCharts(patientId)
-    local currentMedic, currentError = allowedMedic(src)
+    local currentMedic, currentError = allowedMedic(src, target)
     if not currentMedic or currentMedic.PlayerData.citizenid ~= medicId then
         return { error = currentError or '勤務状態を確認してください' }
     end
@@ -535,6 +541,7 @@ lib.callback.register('ptech_mediora_medical:getPatientCharts', function(src, ta
     local result = {
         historyUnavailable = history == nil,
         savePending = savePending,
+        canBill = target ~= src,
         patient = { serverId = target, citizenId = patientId, name = identity(patient.PlayerData) },
         charts = records,
         vitals = (function()
@@ -689,6 +696,11 @@ local debugTreatmentItems = {
     'pmediora_suturekit',
     'pmediora_needleandthread',
     'pmediora_burncream',
+    'pmediora_coolingspray',
+    'pmediora_medicatedbandage',
+    'pmediora_protectivecast',
+    'pmediora_painkiller',
+    'pmediora_hemostatic',
 }
 
 RegisterCommand('medkit30', function(src)

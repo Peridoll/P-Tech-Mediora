@@ -94,6 +94,17 @@ with sync_playwright() as p:
     page.wait_for_timeout(150)
     assert any(endpoint=='treatChartInjury' and data['part']=='right_leg' and data['item']=='pmediora_icepack' for endpoint,data in requests)
     page.locator('#treatment-back').click()
+    page.locator('#chart-treat').click()
+    kit = page.locator('.treatment-tool[data-kind="pmediora_firstaidkit"]').bounding_box()
+    head = page.locator('#chart-body-map [data-part="head"]').bounding_box()
+    page.mouse.move(kit['x']+15, kit['y']+15)
+    page.mouse.down()
+    page.mouse.move(head['x']+head['width']/2, head['y']+head['height']/2, steps=10)
+    assert page.locator('#chart-body-map .drop-ready').count() == 7
+    page.mouse.up()
+    page.wait_for_timeout(150)
+    assert any(endpoint=='treatChartInjury' and data['item']=='pmediora_firstaidkit' and data['part']=='upper_body' for endpoint,data in requests)
+    page.locator('#treatment-back').click()
     # Partial treatment shows the receipt alongside the remaining wound.
     result['currentInjuries'] = [injuries[0]]
     chart.update(treated={'1':True,'2':True,'3':True}, treatmentCharges=[dict(label='冷却', siteCount=3, amount=300000)],
