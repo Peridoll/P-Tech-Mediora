@@ -61,6 +61,11 @@
         <div id="message" class="message"></div>
         <div id="track" class="track is-hidden"><div id="fill" class="fill"></div></div>
     </section>
+    <section id="panel-position-editor" hidden aria-label="パネルの位置調整">
+        <p id="panel-position-status" role="status">ドラッグして移動・離して保存 ／ Escでキャンセル</p>
+        <button id="panel-position-reset" type="button">初期位置に戻す</button>
+        <button id="panel-position-cancel" type="button">キャンセル</button>
+    </section>
     <section id="progress" hidden aria-live="polite">
         <img id="motion" alt="" hidden>
         <svg id="dots" viewBox="0 0 56 44" aria-hidden="true" fill="currentColor"><circle cx="14" cy="22" r="3.5"/><circle cx="28" cy="22" r="3.5"/><circle cx="42" cy="22" r="3.5"/></svg>
@@ -209,6 +214,11 @@
                             </div>
                         </div>
                         <p id="tablet-progress-status" class="tablet-muted" role="status"></p>
+                    </div>
+                    <div class="tablet-panel-settings">
+                        <h2>操作パネルの位置</h2>
+                        <p class="tablet-muted">ドラッグして配置できます。F7キーからも調整できます。</p>
+                        <button id="tablet-move-panel" type="button">位置を調整する</button>
                     </div>
                     <div class="tablet-settings-admin">
                         <button id="tablet-admin-link" type="button" data-page="resources" hidden>⚒ リソース管理</button>

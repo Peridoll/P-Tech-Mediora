@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CVehicleModelInfoVariation>
+  <variationData>
+    <Item>
+      <modelName>pems_shinobi</modelName>
+      <colors>
+        <Item>
+          <indices content="char_array">111 27 0 0</indices>
+          <liveries>
+            <Item value="true" />
+          </liveries>
+        </Item>
+      </colors>
+      <kits>
+        <Item>18511_pems_shinobi_modkit</Item>
+      </kits>
+      <windowsWithExposedEdges />
+      <plateProbabilities>
+        <Probabilities>
+          <Item>
+            <Name>Police guv plate</Name>
+            <Value value="100" />
+          </Item>
+        </Probabilities>
+      </plateProbabilities>
+      <lightSettings value="12" />
+      <sirenSettings value="18511" />
+    </Item>
+  </variationData>
+</CVehicleModelInfoVariation>

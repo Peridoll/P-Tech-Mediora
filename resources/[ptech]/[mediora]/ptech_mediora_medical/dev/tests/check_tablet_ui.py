@@ -120,12 +120,23 @@ with sync_playwright() as p:
     page.locator('#chart-billing-mode').select_option('manual')
     amount = page.locator('#chart-billing-amount')
     assert page.locator('#chart-billing-submit').is_disabled()
+    assert '請求金額を入力' in page.locator('#chart-billing-hint').inner_text()
     amount.fill('0')
     assert page.locator('#chart-billing-submit').is_disabled()
     amount.fill('125000')
     assert '125,000' in page.locator('#chart-billing-total').inner_text()
     assert page.locator('#chart-billing-submit').is_enabled()
+    assert page.locator('#chart-billing-hint').is_hidden()
     page.locator('#chart-billing-close').click()
+    chart['revived'] = True
+    open_chart()
+    page.locator('#chart-bill').click()
+    assert '蘇生プリセットを選択' in page.locator('#chart-billing-hint').inner_text()
+    page.locator('#chart-billing-revive').select_option('hospital')
+    assert page.locator('#chart-billing-submit').is_enabled()
+    assert page.locator('#chart-billing-hint').is_hidden()
+    page.locator('#chart-billing-close').click()
+    chart.pop('revived')
     result['currentInjuries'] = []
     result['vitals']['health'] = 100
     open_chart(treatment=True)

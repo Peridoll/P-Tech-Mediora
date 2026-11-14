@@ -84,6 +84,12 @@ RegisterNUICallback('tabletReady', function(_, cb)
     cb({ ok = true })
 end)
 
+RegisterNUICallback('tabletMoveActionPanel', function(_, cb)
+    if not opened then cb({ ok = false }); return end
+    closeTablet()
+    cb({ ok = exports[resourceName]:editActionPanel() })
+end)
+
 RegisterNUICallback('tabletProgressTheme', function(data, cb)
     local theme = type(data) == 'table' and data.theme
     if not opened or type(theme) ~= 'string' or not progressThemes[theme] then

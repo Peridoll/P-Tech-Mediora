@@ -396,6 +396,26 @@ end)
 
 AddEventHandler('onResourceStart', function(resourceName)
     if resourceName ~= currentResource then return end
+
+    SetTimeout(1000, function()
+        local logistics = 'ptech_mediora_logistics'
+        local deadline = GetGameTimer() + 5000
+        while GetResourceState(logistics) == 'stopping' and GetGameTimer() < deadline do
+            Wait(100)
+        end
+        if GetResourceState(currentResource) ~= 'started' then return end
+        local state = GetResourceState(logistics)
+        if state == 'started' or state == 'starting' then return end
+        if state ~= 'stopped' then
+            log(('Logistics auto-start skipped (state=%s)'):format(state))
+            return
+        end
+        if StartResource(logistics) then
+            log('Logistics auto-started')
+        else
+            log('Logistics auto-start failed; check the server log')
+        end
+    end)
     CreateThread(function()
         Wait(1000)
         for _, source in ipairs(GetPlayers()) do
@@ -441,4 +461,4 @@ RegisterCommand(Config.Points.manualGrantCommand, function(source, args)
     log(('%s: %s'):format(source > 0 and (getCitizenId(source) or 'unknown') or 'console', message))
 end, true)
 
-log(('共有%s・業務実績・勤務時間記録を起動しました。SQL導入を確認してください。'):format(Config.Points.label))
+log(('共有%s・業務実績・勤務時間記録を起動しました。'):format(Config.Points.label))

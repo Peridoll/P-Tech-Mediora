@@ -2,6 +2,9 @@ MedicalWoundServer = {}
 local S, W = MedicalWoundServer, MedicalWounds
 local patients, sessions, pending, locks = {}, {}, {}, {}
 local sequence = 0
+local crutchAssignments = {}
+local autoRevive = {}
+local peacefulEnabled = false
 local starvationCause = '餓死（空腹値からの推定）'
 local drowningCause = '溺死'
 
@@ -13,6 +16,30 @@ local function patient(src)
     local state = patients[id]
     local expired = W.expireBlunt(state, os.time())
     return state, id, player.PlayerData, expired
+end
+
+function S.assignCrutch(src, reason)
+    local settings = Config.Wounds.Crutch
+    if not settings or GetResourceState('wasabi_crutch') ~= 'started' then return false end
+    local state, id, data = patient(src)
+    if not state then return false end
+    local death = Medical.death(Player(src).state.dead, data.metadata)
+    if death == '死亡' or death == '瀕死（laststand）' then return false end
+    local job = data.job or {}
+    local police = job.type == 'leo' or settings.PoliceJobs[job.name] == true
+    local minutes = reason == 'revive'
+        and (police and settings.PoliceReviveMinutes or settings.ReviveMinutes)
+        or settings.FractureMinutes
+    local now = os.time()
+    local previous = crutchAssignments[id]
+    if previous and previous > now + minutes * 60 then return true end
+    local ok = pcall(function() exports.wasabi_crutch:GiveCrutchTarget(src, minutes) end)
+    if not ok then
+        print('[ptech_mediora_medical] 松葉杖を付与できませんでした。wasabi_crutchを確認してください。')
+        return false
+    end
+    crutchAssignments[id] = now + minutes * 60
+    return true
 end
 
 function S.get(src)
@@ -87,9 +114,61 @@ RegisterNetEvent('ptech_mediora_medical:damage', function(data)
     for _, notice in ipairs(notices) do TriggerClientEvent('ptech_mediora_medical:symptom', src, notice) end
 end)
 
+local function updateAutoRevive(src, state, id, dead)
+    if not peacefulEnabled then return end
+    local debug = autoRevive[src]
+    if not debug or debug.id ~= id then
+        debug = { id = id }
+        autoRevive[src] = debug
+        TriggerClientEvent('ptech_mediora_medical:autoReviveStatus', src, true)
+    end
+    if debug.failed and dead then return end
+    debug.failed = nil
+    local now = GetGameTimer()
+    if not dead then
+        if debug.reviving then
+            state.parts, state.ivCondition = W.new().parts, nil
+            state.lastCause, state.lastCauseAt, state.lastPart, state.lastFatal = nil, nil, nil, nil
+            state.revision = state.revision + 1
+            exports.qbx_core:SetMetadata(src, 'hunger', 100)
+            exports.qbx_core:SetMetadata(src, 'thirst', 100)
+            exports.qbx_core:SetMetadata(src, 'stress', 0)
+            sync(src)
+            TriggerClientEvent('ptech_mediora_medical:health', src, 100, id)
+        end
+        if debug.due or not debug.lastDisplayAt or now - debug.lastDisplayAt >= 5000 then
+            TriggerClientEvent('ptech_mediora_medical:autoReviveStatus', src, true)
+            debug.lastDisplayAt = now
+        end
+        debug.due, debug.reviving = nil, nil
+        return
+    end
+    if not debug.due then debug.due = now + 15000 end
+    if debug.reviving then
+        if now - debug.reviving > 10000 then
+            debug.failed = true
+            debug.due, debug.reviving = nil, nil
+            TriggerClientEvent('ptech_mediora_medical:autoReviveStatus', src, true)
+            TriggerClientEvent('ox_lib:notify', src, { title = '自動蘇生', description = '自動蘇生の完了を確認できませんでした', type = 'error' })
+        end
+        return
+    end
+    local remaining = math.max(0, math.ceil((debug.due - now) / 1000))
+    TriggerClientEvent('ptech_mediora_medical:autoReviveStatus', src, remaining)
+    if remaining > 0 then return end
+    debug.reviving = now
+    local ok = pcall(function() exports.wasabi_ambulance:RevivePlayer(src) end)
+    if not ok then
+        debug.failed = true
+            debug.due, debug.reviving = nil, nil
+        TriggerClientEvent('ptech_mediora_medical:autoReviveStatus', src, true)
+        TriggerClientEvent('ox_lib:notify', src, { title = '自動蘇生', description = 'Wasabiの蘇生処理を実行できませんでした', type = 'error' })
+    end
+end
+
 -- 空腹値はQboxのサーバーメタデータから読む。外傷不明を餓死と決めつけない。
 function S.updateDeath(src)
-    local state, _, data = patient(src)
+    local state, id, data = patient(src)
     if not state then return end
     local death = Medical.death(Player(src).state.dead, data.metadata)
     local dead = death == '死亡' or death == '瀕死（laststand）'
@@ -117,6 +196,7 @@ function S.updateDeath(src)
         state.ivCondition = nil
     end
     state.wasDead = dead
+    updateAutoRevive(src, state, id, dead)
     if previousCondition ~= state.ivCondition then
         state.revision = state.revision + 1
         sync(src)
@@ -134,6 +214,14 @@ local function testReply(src, message, kind)
     if src == 0 then print('[ptech_mediora_medical] ' .. message); return end
     TriggerClientEvent('ox_lib:notify', src, { title = 'Medical テスト', description = message, type = kind })
 end
+
+RegisterCommand('peacefull', function(src)
+    if src > 0 and not IsPlayerAceAllowed(src, 'command.peacefull') then return end
+    peacefulEnabled = not peacefulEnabled
+    autoRevive = {}
+    TriggerClientEvent('ptech_mediora_medical:autoReviveStatus', -1, peacefulEnabled)
+    testReply(src, peacefulEnabled and '全員のピースフルモードを有効にしました' or '全員のピースフルモードを解除しました', 'inform')
+end, true)
 
 local function testInjury(src, args)
     local target = tonumber(args[1])
@@ -168,6 +256,37 @@ local function testDamage(src, args)
     TriggerClientEvent('ptech_mediora_medical:damageTest', target, id, amount)
     testReply(src, ('患者ID %d に%d HPのダメージを指定しました'):format(target, amount), 'success')
 end
+
+local function clearAdminHealedWounds(target)
+    local state = patient(target)
+    if not state then return end
+    S.updateDeath(target)
+    state.parts, state.ivCondition = W.new().parts, nil
+    state.lastCause, state.lastCauseAt, state.lastPart, state.lastFatal = nil, nil, nil, nil
+    state.starvationTestUntil = nil
+    state.revision = state.revision + 1
+    sync(target)
+end
+
+local function onTxAdminHeal(data, legacy)
+    -- AddEventHandlerのみで登録する。txAdminのサーバー内TriggerEventでは、
+    -- 呼び出し元のネットイベントのsourceが引き継がれる場合がある。
+    if type(data) ~= 'table' then return end
+    local value = legacy and data.id or data.target
+    if type(value) ~= 'number' and type(value) ~= 'string' then return end
+    local target = tonumber(value)
+    if target == -1 then
+        for _, value in ipairs(GetPlayers()) do
+            local id = tonumber(value)
+            if Medical.validId(id) then clearAdminHealedWounds(id) end
+        end
+    elseif Medical.validId(target) then
+        clearAdminHealedWounds(target)
+    end
+end
+
+AddEventHandler('txAdmin:events:playerHealed', function(data) onTxAdminHeal(data, false) end)
+AddEventHandler('txAdmin:events:healedPlayer', function(data) onTxAdminHeal(data, true) end)
 
 RegisterCommand('medhealall', function(src, args)
     if src > 0 and not IsPlayerAceAllowed(src, 'command.medhealall') then return end
@@ -371,7 +490,8 @@ lib.callback.register('ptech_mediora_medical:treatment:finish', function(src, to
     if MedicalRecordTreatment and task.chartId then
         local firstAction = next(applied.actions)
         local part = plan.part
-        if applied.actions.iv or (firstAction == 'heal' and not next(applied.actions, firstAction)) then part = nil end
+        if applied.actions.iv or applied.actions.suppressFracture or applied.actions.suppressBleeding
+            or (firstAction == 'heal' and not next(applied.actions, firstAction)) then part = nil end
         MedicalRecordTreatment(task.target, task.chartId, plan.item, plan.count, part)
     end
     for key, value in pairs(plan.needs or {}) do
@@ -380,10 +500,13 @@ lib.callback.register('ptech_mediora_medical:treatment:finish', function(src, to
     release(src)
     sync(task.target)
     if a.suppressFracture or a.suppressBleeding then
-        TriggerClientEvent('ptech_mediora_medical:symptom', task.target, {part = plan.part,
-            symptom = a.suppressFracture and 'fractureSuppressed' or 'bleedingSuppressed'})
+        for _, part in ipairs(plan.suppressionParts) do
+            TriggerClientEvent('ptech_mediora_medical:symptom', task.target, { part = part,
+                symptom = a.suppressFracture and 'fractureSuppressed' or 'bleedingSuppressed' })
+        end
     end
     if a.heal then TriggerClientEvent('ptech_mediora_medical:health', task.target, a.heal, valid.patientId) end
+    if a.fracture then S.assignCrutch(task.target, 'fracture') end
     return { ok = true }
 end)
 
@@ -395,6 +518,32 @@ exports('recordMedication', function(src, full)
     sync(src)
     return true
 end)
+-- 薬側で使用を検証・消費した後、サーバー処理から全身へ適用する。
+local function suppressSymptom(src, symptom, action, notice)
+    if not Medical.validId(src) then return false, '患者IDが無効です' end
+    local state = patient(src)
+    if not state then return false, '患者が接続していません' end
+    local count = 0
+    for _, part in ipairs(W.parts) do
+        if state.parts[part][symptom] == 'active' then
+            W.treat(state, { part = part, actions = { [action] = true } })
+            count = count + 1
+            TriggerClientEvent('ptech_mediora_medical:symptom', src, { part = part, symptom = notice })
+        end
+    end
+    if count == 0 then return false, '緩和する症状がありません' end
+    sync(src)
+    return true, count
+end
+
+exports('suppressBleeding', function(src)
+    return suppressSymptom(src, 'bleeding', 'suppressBleeding', 'bleedingSuppressed')
+end)
+
+exports('suppressFractures', function(src)
+    return suppressSymptom(src, 'fracture', 'suppressFracture', 'fractureSuppressed')
+end)
+
 exports('getWounds', S.get)
 
 function S.clearFractures(src, part)
@@ -409,6 +558,7 @@ end
 AddEventHandler('playerDropped', function()
     local src = source
     sessions[src] = nil
+    autoRevive[src] = nil
     release(src)
     for medic, task in pairs(pending) do if task.target == src then release(medic) end end
 end)

@@ -198,6 +198,137 @@ class ServerTest(unittest.TestCase):
         assert(state(2).parts.right_leg.blunt==0 and healths[2]==140)
         ''')
 
+    def test_external_drugs_suppress_each_symptom_across_all_body_parts(self):
+        self.check('''
+        commands.medinjury(0,{'2','head','bleeding','active'})
+        commands.medinjury(0,{'2','left_arm','bleeding','active'})
+        local ok,count=exported.suppressBleeding(2)
+        assert(ok and count==2)
+        assert(state().parts.head.bleeding=='suppressed' and state().parts.left_arm.bleeding=='suppressed')
+        assert(state().parts.right_leg.fracture=='active')
+        commands.medinjury(0,{'2','left_arm','fracture','active'})
+        ok,count=exported.suppressFractures(2)
+        assert(ok and count==2)
+        assert(state().parts.right_leg.fracture=='suppressed' and state().parts.left_arm.fracture=='suppressed')
+        assert(state().parts.right_leg.wounds.bruise)
+        assert(not exported.suppressBleeding(2) and not exported.suppressFractures(2))
+        assert(not exported.suppressBleeding(99) and not exported.suppressFractures(99))
+        ''')
+
+    def test_protective_cast_cures_active_and_suppressed_bone_with_standard_receipt(self):
+        self.check('''
+        stock.pmediora_protectivecast=2
+        local task=start('pmediora_protectivecast')
+        assert(task.token and task.count==1 and task.motion=='splint',task.error)
+        assert(finish(task).ok)
+        assert(not state().parts.right_leg.fracture and stock.pmediora_protectivecast==1)
+        assert(state().parts.right_leg.wounds.bruise)
+        commands.medinjury(0,{'2','right_leg','fracture','suppressed'})
+        assert(finish(start('pmediora_protectivecast')).ok)
+        assert(not state().parts.right_leg.fracture and stock.pmediora_protectivecast==0)
+        local receipt=invoke('getPatientCharts',1,2).charts[1]
+        assert(receipt.charges[1].item=='pmediora_protectivecast' and receipt.charges[1].quantity==2)
+        assert(receipt.totalCharge==200000)
+        assert(start('pmediora_protectivecast').error)
+        ''')
+
+    def test_automatic_crutches_follow_treatment_and_patient_police_job(self):
+        self.check('''
+        local calls={}
+        exports.wasabi_crutch={GiveCrutchTarget=function(_,target,minutes)
+            calls[#calls+1]={target,minutes}
+        end}
+        assert(finish(start('pmediora_protectivecast')).ok)
+        assert(#calls==1 and calls[1][1]==2 and calls[1][2]==1)
+        deadFlags[2]=true
+        exports.wasabi_ambulance={RevivePlayer=function(_,target) deadFlags[target]=false end}
+        assert(invoke('reviveChart',1,2,chartId).ok)
+        assert(#calls==2 and calls[2][2]==3)
+        assert(MedicalWoundServer.assignCrutch(2,'fracture') and #calls==2)
+        players[3].PlayerData.job={name='police',type='leo'}
+        assert(MedicalWoundServer.assignCrutch(3,'revive'))
+        assert(#calls==3 and calls[3][2]==1)
+        deadFlags[3]=true
+        assert(not MedicalWoundServer.assignCrutch(3,'fracture') and #calls==3)
+        ''')
+
+    def test_drinking_relief_drugs_suppresses_all_parts_with_one_item(self):
+        self.check('''
+        commands.medinjury(0,{'2','head','bleeding','active'})
+        commands.medinjury(0,{'2','left_arm','bleeding','active'})
+        commands.medinjury(0,{'2','left_leg','fracture','active'})
+        stock.pmediora_hemostatic=1
+        stock.pmediora_painkiller=1
+        local bleed=invoke('treatment:start',2,2,'upper_body','pmediora_hemostatic',nil,true)
+        assert(bleed.count==1 and finish(bleed,2).ok)
+        assert(state().parts.head.bleeding=='suppressed' and state().parts.left_arm.bleeding=='suppressed')
+        assert(state().parts.right_leg.fracture=='active')
+        local pain=invoke('treatment:start',2,2,'upper_body','pmediora_painkiller',nil,true)
+        assert(pain.count==1 and finish(pain,2).ok)
+        assert(state().parts.right_leg.fracture=='suppressed' and state().parts.left_leg.fracture=='suppressed')
+        assert(stock.pmediora_hemostatic==0 and stock.pmediora_painkiller==0)
+        ''')
+
+    def test_auto_revive_waits_fifteen_seconds_and_restores_needs_and_wounds(self):
+        self.check('''
+        IsPlayerAceAllowed=function() return true end
+        local calls=0
+        exports.wasabi_ambulance={RevivePlayer=function(_,target)
+            calls=calls+1
+            deadFlags[target]=false
+        end}
+        exports.qbx_core.SetMetadata=function(_,src,key,value)
+            players[src].PlayerData.metadata[key]=value
+        end
+        commands.peacefull(2,{})
+        deadFlags[2]=true
+        MedicalWoundServer.updateDeath(2)
+        clock=clock+14999
+        MedicalWoundServer.updateDeath(2)
+        assert(calls==0)
+        clock=clock+1
+        MedicalWoundServer.updateDeath(2)
+        assert(calls==1)
+        MedicalWoundServer.updateDeath(2)
+        assert(#MedicalWoundServer.report(2).rows==0)
+        assert(players[2].PlayerData.metadata.hunger==100 and players[2].PlayerData.metadata.thirst==100)
+        assert(players[2].PlayerData.metadata.stress==0)
+        assert(commands.medautorevive==nil and restrictedCommands.peacefull)
+        IsPlayerAceAllowed=function() return false end
+        commands.peacefull(1,{})
+        deadFlags[3]=true
+        MedicalWoundServer.updateDeath(3)
+        clock=clock+15000
+        MedicalWoundServer.updateDeath(3)
+        assert(calls==2)
+        MedicalWoundServer.updateDeath(3)
+        IsPlayerAceAllowed=function() return true end
+        commands.peacefull(2,{})
+        deadFlags[2]=true
+        MedicalWoundServer.updateDeath(2)
+        clock=clock+16000
+        MedicalWoundServer.updateDeath(2)
+        assert(calls==2)
+        ''')
+
+    def test_txadmin_local_heal_accepts_inherited_source_and_supports_heal_all(self):
+        self.check('''
+        damage(3,'cut',30)
+        local unchanged=state(2).revision
+        source=1
+        emit('txAdmin:events:playerHealed',{target='invalid'})
+        assert(state(2).revision==unchanged)
+        emit('txAdmin:events:playerHealed',{target='2'})
+        assert(#MedicalWoundServer.report(2).rows==0)
+        assert(state(2).parts.right_leg.blunt==0)
+        assert(#MedicalWoundServer.report(3).rows>0)
+        emit('txAdmin:events:playerHealed',{target=-1})
+        assert(#MedicalWoundServer.report(3).rows==0)
+        commands.medinjury(0,{'2','head','bleeding','active'})
+        emit('txAdmin:events:healedPlayer',{id=2})
+        assert(#MedicalWoundServer.report(2).rows==0)
+        ''')
+
     def test_real_treatment_consumes_required_count_only_after_success(self):
         self.check("local task=start('pmediora_icepack');assert(task.count==4 and writes==0 and task.motion=='cooling');assert(finish(task).ok and writes==4);local p=state().parts.right_leg;assert(not p.wounds.bruise and p.fracture=='active');assert(#state().history==1)")
 
@@ -548,7 +679,24 @@ class ClientTest(unittest.TestCase):
         self.check("MedicalWoundClient.sampleDamage('WEAPON_STUNGUN','right_leg');assert(state(1).parts.right_leg.wounds.pin);healths[1]=190;MedicalWoundClient.sampleDamage('WEAPON_FIRE','right_leg');assert(healths[1]==180 and selfDamage==10 and state(1).parts.right_leg.sharp==10)")
 
     def test_bleeding_ticks_once_per_second_and_never_increases_accumulation(self):
-        self.check("damage(1,'shot',40);local b=state(1).parts.right_leg.blunt;MedicalWoundClient.step();assert(selfDamage==2);MedicalWoundClient.step();assert(selfDamage==2 and state(1).parts.right_leg.blunt==b);clock=clock+1000;MedicalWoundClient.step();assert(selfDamage==4)")
+        self.check("damage(1,'shot',40);local b=state(1).parts.right_leg.blunt;MedicalWoundClient.step();assert(selfDamage==1);MedicalWoundClient.step();assert(selfDamage==1 and state(1).parts.right_leg.blunt==b);clock=clock+1000;MedicalWoundClient.step();assert(selfDamage==2)")
+
+    def test_bleeding_reaches_fatal_health_and_stops_after_down(self):
+        self.check('''
+        damage(1,'shot',40)
+        local before=state(1).parts.right_leg.blunt
+        healths[1]=102
+        MedicalWoundClient.step()
+        assert(healths[1]==101)
+        clock=clock+1000
+        MedicalWoundClient.step()
+        assert(healths[1]==0)
+        players[1].PlayerData.metadata.isdead=true
+        clock=clock+1000
+        local loss=selfDamage
+        MedicalWoundClient.step()
+        assert(selfDamage==loss and state(1).parts.right_leg.blunt==before)
+        ''')
 
     def test_active_fracture_trips_but_walking_and_dead_do_not(self):
         self.check("damage(1,'blunt',70);MedicalWoundClient.step();assert(trips==0);jumping=true;MedicalWoundClient.step();assert(trips==1);MedicalWoundClient.step();assert(trips==1);players[1].PlayerData.metadata.isdead=true;clock=clock+4000;MedicalWoundClient.step();assert(trips==1)")

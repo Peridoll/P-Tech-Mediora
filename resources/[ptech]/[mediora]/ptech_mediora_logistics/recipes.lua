@@ -48,8 +48,8 @@ Config.CraftingRecipes = {
   },
   {
     id          = 'splint',
-    label       = '副木',
-    output      = 'pmediora_splint',
+    label       = '保護ギプス',
+    output      = 'pmediora_protectivecast',
     ingredients = { plastic = 4 },
   },
   {

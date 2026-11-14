@@ -383,6 +383,25 @@ if Config.UseTarget then
             end},
     })
 end
+-- 搬送中は毎フレーム確認し、短いX入力や他リソースが無効化した入力も拾う。
+CreateThread(function()
+    while true do
+        if carrying or carriedBy or accepting then
+            if IsControlJustPressed(0,Config.AcceptKey) or IsDisabledControlJustPressed(0,Config.AcceptKey) then
+                if carrying then
+                    TriggerServerEvent('ptech_mediora_escort:server:stop')
+                elseif carriedBy then
+                    TriggerServerEvent('ptech_mediora_escort:server:escape')
+                else
+                    clearAcceptance()
+                end
+            end
+            Wait(0)
+        else
+            Wait(100)
+        end
+    end
+end)
 CreateThread(function()
     while true do
         Wait(100)
@@ -393,9 +412,6 @@ CreateThread(function()
                 or IsPedVaulting(ped) or IsPedInMeleeCombat(ped) or IsPedShooting(ped)
                 or IsPlayerFreeAiming(PlayerId()) or carriedBy then clearAcceptance() end
         end
-        if carriedBy and not down(cache.ped) and IsControlJustPressed(0,Config.AcceptKey) then
-            TriggerServerEvent('ptech_mediora_escort:server:escape')
-        elseif accepting and IsControlJustPressed(0,Config.AcceptKey) then clearAcceptance() end
         if carrying then
             local carrySession=carrying
             local v=IsPedInAnyVehicle(cache.ped,false)

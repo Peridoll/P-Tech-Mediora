@@ -144,7 +144,7 @@ RegisterNetEvent('ptech_mediora_escort:server:stop',function()
 end)
 RegisterNetEvent('ptech_mediora_escort:server:escape',function()
     local src=source;local carrier=held[src]
-    if carrier and living(src) then release(carrier) end
+    if carrier then release(carrier) end
 end)
 local function veh(netId)
     if type(netId)~='number' or netId<1 or netId>65535 then return 0 end

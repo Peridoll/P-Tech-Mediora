@@ -225,7 +225,12 @@
         const image = document.createElement('img');
         image.alt = '';
         image.draggable = false;
-        image.src = 'https://cfx-nui-ox_inventory/web/images/' + encodeURIComponent(item.image || item.id + '.png');
+        const filename = item.image || item.id + '.png';
+        const directory = ['pmediora_supplybox.png', 'pmediora_specialbox.png'].includes(filename)
+            ? 'ptech_mediora_logistics/install/images/'
+            : 'ptech_mediora_medical/install/ox_inventory/images/';
+        image.src = filename.startsWith('https://') ? filename
+            : 'https://raw.githubusercontent.com/Peridoll/P-Tech-Mediora/refs/heads/feature/dev/resources/%5Bptech%5D/%5Bmediora%5D/' + directory + encodeURIComponent(filename);
         image.addEventListener('error', () => { image.style.visibility = 'hidden'; });
         return image;
     }
@@ -868,6 +873,17 @@
     element('chart-search').addEventListener('submit', searchCharts);
     element('chart-history').addEventListener('change', showChart);
     element('chart-open').addEventListener('click', openSelectedChart);
+    element('move-panel').addEventListener('click', async () => {
+        if (preview) {
+            setVisible(false);
+            window.postMessage({ action: 'panelPosition', editing: true, position: false, session: 0 }, '*');
+            return;
+        }
+        try {
+            const result = await post('tabletMoveActionPanel');
+            if (!result.ok) throw new Error('位置調整を開始できませんでした。');
+        } catch (error) { status(error.message); }
+    });
     element('progress-theme').addEventListener('change', async (event) => {
         const select = event.currentTarget;
         const version = request;

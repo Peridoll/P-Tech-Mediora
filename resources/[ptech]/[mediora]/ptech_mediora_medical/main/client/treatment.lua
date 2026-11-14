@@ -91,7 +91,7 @@ local function useMedicalItem(item)
     local fields, options = {}, {}
     local names = {head='頭部',upper_body='上半身',lower_body='下半身',left_arm='左腕',right_arm='右腕',left_leg='左脚',right_leg='右脚'}
     for _, part in ipairs(MedicalWounds.parts) do options[#options + 1] = { value = part, label = names[part] } end
-    if not spec.heal or spec.bleeding then
+    if (not spec.heal or spec.bleeding) and not spec.suppressFracture and not spec.suppressBleeding then
         fields[1] = { type = 'select', label = '処置する部位', options = options, required = true }
     end
     local part = 'upper_body'

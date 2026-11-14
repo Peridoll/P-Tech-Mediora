@@ -86,6 +86,7 @@
                 </div>
               </div>
               <div class="billing-footer">
+                <p id="chart-billing-hint" role="status" hidden></p>
                 <p id="chart-bill-result" role="status" hidden></p>
                 <button id="chart-billing-submit" type="submit" class="primary">請求を送信 <span aria-hidden="true">→</span></button>
               </div>
@@ -187,5 +188,9 @@
   </svg>
   <div><strong id="exam-progress-label">診察結果を入力中</strong><div class="exam-track"><div id="exam-fill"></div></div></div>
 </div>
+<aside id="wounds-accumulation" hidden aria-label="負傷蓄積値">
+  <strong>負傷蓄積値</strong><small>/medwounds で表示切替</small>
+  <table><thead><tr><th>部位</th><th>鈍症</th><th>鋭症</th></tr></thead><tbody id="wounds-accumulation-rows"></tbody></table>
+</aside>
 <script src="app.js"></script>
 </body></html>

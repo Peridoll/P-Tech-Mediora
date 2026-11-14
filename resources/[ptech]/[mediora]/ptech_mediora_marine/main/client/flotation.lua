@@ -6,43 +6,40 @@ local floatTicket, floatX, floatY, floatZ, blockedTicket, using = nil, nil, nil,
 local obstacleCheckAt, obstacleProbe, ascentObstructed = 0, nil, false
 local deathStarted, holdStarted, activationErrorUntil = nil, nil, 0
 local floatUi
+local actionPanels = {}
 
 local function notify(text, kind)
     lib.notify({ title = '緊急浮上装置', description = text, type = kind or 'inform' })
 end
 
 local function sendActionPanel(id, panel)
-    SendNUIMessage({
-        action = panel and 'setPanel' or 'removePanel',
-        id = id,
-        panel = panel,
-        switchKey = Config.ActionPanel and Config.ActionPanel.SwitchKey or 'F6',
-    })
+    actionPanels[id] = panel
+    if GetResourceState('ptech_mediora_core') ~= 'started' then return false end
+    local ok, accepted = pcall(function()
+        if panel then
+            panel.id = id
+            return exports['ptech_mediora_core']:setActionPanel(panel)
+        end
+        return exports['ptech_mediora_core']:removeActionPanel(id)
+    end)
+    return ok and accepted == true
 end
 
--- Rescueから任意で呼び出す共通表示API。Marineを導入しない環境でもRescueは動作する。
+-- 既存のRescue呼び出しもCOREの共通パネルへ転送する。
 exports('setActionPanel', function(panel)
     if type(panel) ~= 'table' or panel.id ~= 'rescue' or type(panel.text) ~= 'string' then return false end
-    sendActionPanel('rescue', panel)
-    return true
+    return sendActionPanel('rescue', panel)
 end)
 
 exports('removeActionPanel', function(id)
     if id ~= 'rescue' then return false end
-    sendActionPanel('rescue', nil)
-    return true
+    return sendActionPanel('rescue', nil)
 end)
 
-if lib.addKeybind then
-    lib.addKeybind({
-        name = 'ptech_mediora_action_panel_next',
-        description = 'Medioraのアクション表示タブを切り替える',
-        defaultKey = Config.ActionPanel and Config.ActionPanel.SwitchKey or 'F6',
-        onPressed = function()
-            SendNUIMessage({ action = 'nextTab' })
-        end,
-    })
-end
+AddEventHandler('onClientResourceStart', function(resource)
+    if resource ~= 'ptech_mediora_core' then return end
+    for id, panel in pairs(actionPanels) do sendActionPanel(id, panel) end
+end)
 
 local function isPlayerOrVehicleInWater(ped)
     if IsEntityInWater(ped) then return true end
@@ -196,7 +193,8 @@ local function reset()
     using = false
     deathStarted, holdStarted, activationErrorUntil = nil, nil, 0
     floatUi = nil
-    SendNUIMessage({ action = 'clearPanels' })
+    sendActionPanel('marine', nil)
+    sendActionPanel('rescue', nil)
 end
 
 RegisterNetEvent('ptech_mediora_marine:resetFlotation', function()

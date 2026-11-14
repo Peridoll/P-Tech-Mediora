@@ -3,6 +3,55 @@ local C, W = MedicalWoundClient, MedicalWounds
 local snapshot, citizenId, token, revision, sequence = nil, nil, nil, -1, 0
 local generation, lastHealth, lastPed, applying, suspended = 0, nil, nil, false, false
 local lastPin, nextAction, wasAction, nextBleed = 0, 0, false, 0
+local function removeAutoRevivePanel()
+    if GetResourceState('ptech_mediora_core') == 'started' then
+        pcall(function() exports.ptech_mediora_core:removeActionPanel('medical-auto-revive') end)
+    end
+end
+
+local autoReviveDisplay
+local function renderAutoRevivePanel(seconds)
+    if seconds == false then removeAutoRevivePanel(); return end
+    local idle = seconds == true
+    if not idle and (not W.finite(seconds) or seconds < 0 or seconds > 15) then return end
+    if GetResourceState('ptech_mediora_core') == 'started' then
+        pcall(function()
+            exports.ptech_mediora_core:setActionPanel({
+                id = 'medical-auto-revive', title = 'ピースフルモード', icon = '✚',
+                text = idle and '死亡後自動蘇生' or seconds > 0 and ('あと%d秒で蘇生'):format(seconds) or '蘇生しています…',
+                progress = not idle and (15 - seconds) / 15 * 100 or nil, state = 'active',
+                temporaryExpand = not idle,
+                startMinimized = idle,
+            })
+        end)
+    end
+end
+
+RegisterNetEvent('ptech_mediora_medical:autoReviveStatus', function(seconds)
+    if source ~= 65535 then return end
+    if seconds ~= true and seconds ~= false and (not W.finite(seconds) or seconds < 0 or seconds > 15) then return end
+    autoReviveDisplay = seconds
+    renderAutoRevivePanel(seconds)
+end)
+
+AddEventHandler('onResourceStop', function(name)
+    if name == GetCurrentResourceName() then removeAutoRevivePanel() end
+end)
+
+local accumulationVisible = false
+local function showAccumulation(state)
+    SendNUIMessage({
+        action = 'wounds:accumulation',
+        data = { visible = accumulationVisible, parts = state and state.parts },
+    })
+end
+
+RegisterCommand('medwounds', function()
+    accumulationVisible = not accumulationVisible
+    C.refresh()
+    showAccumulation(snapshot)
+end, false)
+
 local weapons = {}
 for name, kind in pairs(Config.Wounds.WeaponKinds) do weapons[GetHashKey(name)] = kind end
 
@@ -13,6 +62,10 @@ end
 
 local function reset()
     generation = generation + 1
+    accumulationVisible = false
+    autoReviveDisplay = nil
+    removeAutoRevivePanel()
+    showAccumulation(nil)
     snapshot, citizenId, token, revision, sequence = nil, nil, nil, -1, 0
     lastHealth, lastPed, nextAction, wasAction, nextBleed = nil, nil, 0, false, 0
 end
@@ -21,6 +74,7 @@ function C.apply(result)
     if type(result) ~= 'table' or result.citizenId ~= citizenId or identity() ~= citizenId
         or type(result.state) ~= 'table' or not W.finite(result.revision) or result.revision < revision then return false end
     snapshot, revision = result.state, result.revision
+    if accumulationVisible then showAccumulation(snapshot) end
     return true
 end
 
@@ -28,7 +82,10 @@ function C.refresh()
     local id = identity()
     if type(id) ~= 'string' or id == '' then if citizenId then reset() end; return end
     if citizenId ~= id then reset(); citizenId = id end
-    if token then return end
+    if token then
+        if autoReviveDisplay ~= nil then renderAutoRevivePanel(autoReviveDisplay) end
+        return
+    end
     local request = generation
     local ok, result = pcall(lib.callback.await, 'ptech_mediora_medical:wounds:get', false, id)
     if request ~= generation or identity() ~= id then return end
@@ -97,14 +154,18 @@ local function alive()
     local ped = PlayerPedId()
     if id ~= citizenId or not snapshot or ped == 0 then return false end
     local death = Medical.death(LocalPlayer and LocalPlayer.state.dead, data.metadata)
-    return GetEntityHealth(ped) > Config.Wounds.HealthBase and not IsPedDeadOrDying(ped, true)
+    return GetEntityHealth(ped) > 0 and not IsPedDeadOrDying(ped, true)
         and death ~= '死亡' and death ~= '瀕死（laststand）'
 end
 
-local function ownDamage(percent)
+local function ownDamage(percent, fatalAtBase)
     local ped = PlayerPedId()
     applying = true
     ApplyDamageToPed(ped, math.max(1, math.ceil(healthRange(ped) * percent / 100)), false)
+    if fatalAtBase and GetEntityHealth(ped) <= Config.Wounds.HealthBase
+        and not IsPedDeadOrDying(ped, true) then
+        SetEntityHealth(ped, 0)
+    end
     applying = false
     lastHealth = GetEntityHealth(ped)
 end
@@ -114,8 +175,9 @@ function C.step()
     local now, ped = GetGameTimer(), PlayerPedId()
     if now >= nextBleed then
         nextBleed = now + 1000
-        if W.active(snapshot, 'bleeding') then ownDamage(Config.Wounds.BleedDamage) end
+        if W.active(snapshot, 'bleeding') then ownDamage(Config.Wounds.BleedDamage, true) end
     end
+    if not alive() then wasAction = false; return end
     if IsPedInAnyVehicle(ped, true) or IsPedSwimming(ped) or IsPedSwimmingUnderWater(ped)
         or IsEntityAttached(ped) then wasAction = false; return end
     local action = IsPedJumping(ped) or IsPedClimbing(ped) or IsPedVaulting(ped) or IsPedDiving(ped)

@@ -5,7 +5,7 @@ html, body {
     background-image: none !important;
 }
 .action-panel {
-    position: fixed; right: 3.2vh; top: 42%; width: 31vh; box-sizing: border-box;
+    position: fixed; right: 3.2vh; bottom: 3.2vh; width: 31vh; box-sizing: border-box;
     padding: 1.35vh 1.55vh; color: #f7fafc; background: rgba(11, 20, 29, .92);
     border: 1px solid rgba(255, 255, 255, .16); border-left: .45vh solid var(--panel-accent, #55d4bc);
     border-radius: .55vh; box-shadow: 0 .6vh 2.2vh rgba(0, 0, 0, .38);
@@ -34,3 +34,35 @@ html, body {
 :root[data-progress-theme="violet"] { --progress-color: #bc9cff; }
 :root[data-progress-theme="peach"] { --progress-color: #ff9c85; }
 :root[data-progress-theme="lime"] { --progress-color: #b5e66a; }
+
+/* Compact action rail. The existing switch key opens each panel in turn. */
+.action-panel.is-minimized {
+    right: 1vh; width: max(30px, 3.8vh); max-height: 50vh;
+    padding: .7vh .45vh; border-left-width: .25vh; overflow: hidden auto;
+}
+.action-panel.is-minimized .panel-navigation { flex-direction: column; gap: .8vh; }
+.action-panel.is-minimized .indicators { flex-direction: column; gap: .7vh; }
+.action-panel.is-minimized .indicator:nth-child(n + 2) { display: none; }
+.action-panel.is-minimized .indicator {
+    width: max(6px, .7vh); height: max(6px, .7vh); flex: none;
+    border: 0; border-radius: 50%; background: var(--indicator-accent, #55d4bc);
+}
+.action-panel.is-minimized .switch-hint {
+    writing-mode: vertical-rl; text-orientation: upright; white-space: nowrap;
+    font-size: max(10px, 1.05vh); line-height: 1.3; letter-spacing: .12em;
+}
+.action-panel.is-minimized :is(.heading, .message, .track) { display: none; }
+
+.action-panel.is-positioning { z-index: 30; cursor: grab; touch-action: none; outline: 1px dashed #8be5d2; outline-offset: 3px; }
+.action-panel.is-positioning:not(.is-hidden) { transition: none; transform: none; }
+.action-panel.is-positioning:active { cursor: grabbing; }
+#panel-position-editor {
+    position: fixed; z-index: 31; top: 24px; left: 50%; transform: translateX(-50%);
+    max-width: calc(100vw - 24px); padding: 14px 18px; border: 1px solid #47646d;
+    border-radius: 10px; background: #142e36; color: #f7fafc; font-size: 14px; text-align: center;
+}
+#panel-position-editor p { margin: 0 0 10px; }
+#panel-position-editor button {
+    margin: 0 4px; padding: 8px 12px; border: 0; border-radius: 6px;
+    background: #dfebe7; color: #24594d; font: inherit; cursor: pointer;
+}

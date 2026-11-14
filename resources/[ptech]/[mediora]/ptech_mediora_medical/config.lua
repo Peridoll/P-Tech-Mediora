@@ -158,7 +158,7 @@ Config = {
     FallbackPart = 'upper_body',
     BurnBonus = 10,
     PinMultiplier = 2,
-    BleedDamage = 2,
+    BleedDamage = 1,
     TreatmentRiskMax = 30,
     BruiseOffset = 5,
     BruiseBonus = 5,
@@ -174,6 +174,12 @@ Config = {
     ActionDamage = 1,
     SampleInterval = 100,
     TreatmentDuration = 2000,
+    Crutch = {
+      ReviveMinutes = 3,
+      PoliceReviveMinutes = 1,
+      FractureMinutes = 1,
+      PoliceJobs = { police = true }, -- job.type が leo の職業もPDとして扱う
+    },
 
     Items = {
       pmediora_ivdrip              = { label = '点滴', ivRecovery = {

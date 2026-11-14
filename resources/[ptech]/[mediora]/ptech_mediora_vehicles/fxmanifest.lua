@@ -13,6 +13,8 @@ shared_scripts {
 }
 
 client_scripts {
+    'assets/ptech_ems_shinobi/client/vehiclenames.lua',
+    'assets/ptech_ems_shinobi/client/livery.lua',
     'main/client/weapon_safety.lua',
     'main/client/mooring.lua',
     'main/client/vehicle_callout.lua',
@@ -37,9 +39,22 @@ data_file 'VEHICLE_METADATA_FILE' 'assets/ptech_ems_blazer/data/vehicles.meta'
 data_file 'CARCOLS_FILE' 'assets/ptech_ems_blazer/data/carcols.meta'
 data_file 'VEHICLE_VARIATION_FILE' 'assets/ptech_ems_blazer/data/carvariations.meta'
 
+data_file 'HANDLING_FILE' 'assets/ptech_ems_shinobi/data/handling.meta'
+data_file 'VEHICLE_METADATA_FILE' 'assets/ptech_ems_shinobi/data/vehicles.meta'
+data_file 'CARCOLS_FILE' 'assets/ptech_ems_shinobi/data/carcols.meta'
+data_file 'VEHICLE_VARIATION_FILE' 'assets/ptech_ems_shinobi/data/carvariations.meta'
+
 dependencies {
+    '/assetpacks',
     'ox_lib',
     'ox_target',
     'qbx_vehiclekeys',
     'qbx_core',
+}
+
+escrow_ignore {
+    '**/*.lua',
+    '**/*.meta',
+    '**/*.ytd',
+    'stream/mods/liveries/*.yft',
 }

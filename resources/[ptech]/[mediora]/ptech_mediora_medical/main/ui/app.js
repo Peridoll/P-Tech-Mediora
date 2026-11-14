@@ -12,6 +12,24 @@ const bleedLabels = ['なし', '少量', '少量', '多量', '多量'];
 const severityLabel = (value, cause) => cause && value === 1 ? '軽傷' : cause && value === 3 ? '重傷' : labels[value];
 const validLevel = value => Number.isInteger(value) && value >= 0 && value <= 4;
 const bodyNames = { head: '頭部', upper_body: '上半身', lower_body: '下半身', left_arm: '左腕', right_arm: '右腕', left_leg: '左脚', right_leg: '右脚' };
+window.addEventListener('message', ({ data }) => {
+  if (data?.action !== 'wounds:accumulation') return;
+  const panel = byId('wounds-accumulation');
+  panel.hidden = data.data?.visible !== true;
+  const rows = byId('wounds-accumulation-rows');
+  rows.replaceChildren();
+  if (panel.hidden) return;
+  for (const [part, name] of Object.entries(bodyNames)) {
+    const row = document.createElement('tr');
+    for (const value of [name, data.data?.parts?.[part]?.blunt, data.data?.parts?.[part]?.sharp]) {
+      const cell = document.createElement('td');
+      cell.textContent = typeof value === 'string' ? value : Number.isFinite(value) ? value.toFixed(1) : '—';
+      row.append(cell);
+    }
+    rows.append(row);
+  }
+});
+
 const kinds = { blunt: '打ち身', bruise: '打撲', cut: '切り傷', burn: '火傷', pin: '通電ピン', fracture: '骨折', bleeding: '出血', shot: '銃創', stabbed: '刺創', beat: '打撲', burned: '火傷', starvation: '餓死', drowning: '溺死' };
 
 function renderInjuries(list, injuries) {
@@ -125,8 +143,20 @@ function issuedDate(value) {
 }
 
 const treatmentImages = { bandage: 'bandage', forceps: 'surgicalforceps', needle: 'needleandthread', health: 'firstaidkit', beat: 'icepack', shot: 'bulletextractionkit', stabbed: 'suturekit', burned: 'burncream' };
-const treatmentImageAliases = { pmediora_coolingspray: 'pmediora_icepack', pmediora_medicatedbandage: 'pmediora_bandage', pmediora_protectivecast: 'pmediora_splint', pmediora_painkiller: 'pmediora_firstaidkit', pmediora_hemostatic: 'pmediora_firstaidkit' };
-const treatmentImage = kind => 'https://cfx-nui-ox_inventory/web/images/' + (kind.startsWith('pmediora_') ? treatmentImageAliases[kind] || kind : 'pmediora_' + treatmentImages[kind]) + '.png';
+const treatmentImageAliases = { pmediora_coolingspray: 'pmediora_icepack', pmediora_medicatedbandage: 'pmediora_bandage', pmediora_painkiller: 'pmediora_firstaidkit', pmediora_hemostatic: 'pmediora_firstaidkit' };
+const itemImageBase = 'https://raw.githubusercontent.com/Peridoll/P-Tech-Mediora/feature/dev/resources/%5Bptech%5D/%5Bmediora%5D/ptech_mediora_medical/install/ox_inventory/images/';
+function setTreatmentImage(icon, kind) {
+  const name = kind.startsWith('pmediora_') ? treatmentImageAliases[kind] || kind : 'pmediora_' + treatmentImages[kind];
+  // GitHub側の保護ギプス画像は、現在splint名で公開されている。
+  const remoteName = name === 'pmediora_protectivecast' ? 'pmediora_splint' : name;
+  const fallback = 'https://cfx-nui-ox_inventory/web/images/' + name + '.png';
+  icon.hidden = false;
+  icon.onerror = () => {
+    if (icon.src !== fallback) icon.src = fallback;
+    else { icon.onerror = null; icon.hidden = true; }
+  };
+  icon.src = itemImageBase + remoteName + '.png';
+}
 
 const calloutPositions = {
   head: [0, 13], upper_body: [1, 25], lower_body: [0, 45],
@@ -301,6 +331,9 @@ function renderCharts(result, preferredId, openTreatment) {
         const option = new Option(bodyNames[part] + '／' + item.label, part + ':' + item.name);
         option.dataset.part = part;
         option.dataset.kind = item.name;
+        if (definitions[item.name]?.suppressFracture || definitions[item.name]?.suppressBleeding) {
+          option.dataset.wholeBody = 'true';
+        }
         selectInjury.add(option);
       }
       if (definitions[item.name]?.heal && result.vitals?.health < 100 && !result.vitals?.down) {
@@ -404,8 +437,7 @@ function renderCharts(result, preferredId, openTreatment) {
       const icon = document.createElement('img');
       icon.alt = '';
       icon.draggable = false;
-      icon.src = treatmentImage(kind);
-      icon.addEventListener('error', () => { icon.hidden = true; });
+      setTreatmentImage(icon, kind);
       const label = document.createElement('span');
       label.textContent = name;
       card.append(icon, label);
@@ -542,6 +574,14 @@ function renderCharts(result, preferredId, openTreatment) {
       const valid = manual ? amount.validity.valid : !chart.unpriced && (!chart.revived || !!category.value) && total > 0;
       text('chart-billing-total', valid ? yen(total) : '—');
       sendBill.disabled = submittingBill || !valid;
+      let hint = '';
+      if (manual && !amount.value) hint = '請求金額を入力すると送信できます。';
+      else if (manual && !valid) hint = '1円から' + Number(amount.max).toLocaleString('ja-JP') + '円までの整数を入力してください。';
+      else if (!manual && chart.unpriced) hint = '単価未設定の道具があります。金額を手入力してください。';
+      else if (!manual && chart.revived && !category.value) hint = '蘇生プリセットを選択すると送信できます。';
+      else if (!valid) hint = '請求する金額がありません。';
+      text('chart-billing-hint', hint);
+      byId('chart-billing-hint').hidden = !hint;
     };
     bill.onclick = () => {
       text('chart-billing-patient', result.patient.name || '氏名未登録');
@@ -553,6 +593,8 @@ function renderCharts(result, preferredId, openTreatment) {
       amount.value = '';
       updateTotal();
       billingWindow.showModal();
+      if (mode.value === 'manual') amount.focus();
+      else if (chart.revived) category.focus();
     };
     category.onchange = updateTotal;
     mode.onchange = updateTotal;
@@ -844,7 +886,7 @@ window.addEventListener('message', ({ data }) => {
   panel.classList.toggle('tool-progress', hasTool);
   if (hasTool) {
     tool.hidden = false;
-    tool.src = treatmentImage(data.tool);
+    setTreatmentImage(tool, data.tool);
     tool.dataset.tool = data.tool;
   }
   const fill = byId('exam-fill');

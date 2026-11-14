@@ -200,7 +200,7 @@ _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
 Config.BoxContents = {
   { item = 'pmediora_firstaidkit',         weight = 1 }, -- 救急キット
   { item = 'pmediora_bandage',               weight = 2 }, -- 包帯
-  { item = 'pmediora_splint',                weight = 1 }, -- 副木
+  { item = 'pmediora_protectivecast',        weight = 1 }, -- 保護ギプス
   { item = 'pmediora_icepack',              weight = 2 }, -- 冷却パック
   { item = 'pmediora_bulletextractionkit', weight = 1 }, -- 弾丸除去キット
   { item = 'pmediora_surgicalforceps',      weight = 2 }, -- ピンセット

@@ -205,15 +205,24 @@ function W.plan(state, part, name)
     end
     if item.fracture and p.fracture then actions.fracture, units = true, math.max(units, 1) end
     if item.bleeding and p.bleeding then actions.bleeding, units = true, math.max(units, 1) end
-    if item.suppressFracture and p.fracture == 'active' then actions.suppressFracture, units = true, 1 end
-    if item.suppressBleeding and p.bleeding == 'active' then actions.suppressBleeding, units = true, 1 end
+    local suppressionParts = {}
+    for _, key in ipairs(W.parts) do
+        local target = state.parts[key]
+        if item.suppressFracture and target.fracture == 'active' then
+            actions.suppressFracture, units = true, 1
+            suppressionParts[#suppressionParts + 1] = key
+        elseif item.suppressBleeding and target.bleeding == 'active' then
+            actions.suppressBleeding, units = true, 1
+            suppressionParts[#suppressionParts + 1] = key
+        end
+    end
     if item.heal then actions.heal, units = item.heal, math.max(units, 1) end
     if item.ivRecovery and part == 'upper_body' and item.ivRecovery[state.ivCondition] then
         actions.iv, units = state.ivCondition, math.max(units, 1)
     end
     if units == 0 then return nil, 'その道具で処置する症状がありません' end
     local count = math.ceil(units / (item.power or 1))
-    return { part = part, item = name, label = item.label, actions = actions, count = count,
+    return { part = part, item = name, label = item.label, actions = actions, count = count, suppressionParts = suppressionParts,
         duration = (item.duration or Config.Wounds.TreatmentDuration) * count }
 end
 
@@ -236,8 +245,11 @@ function W.treat(state, plan, full)
     end
     if a.fracture then p.fracture = nil end
     if a.bleeding then p.bleeding = nil end
-    if a.suppressFracture then p.fracture = 'suppressed' end
-    if a.suppressBleeding then p.bleeding = 'suppressed' end
+    for _, key in ipairs(plan.suppressionParts or { plan.part }) do
+        local target = state.parts[key]
+        if a.suppressFracture and target.fracture == 'active' then target.fracture = 'suppressed' end
+        if a.suppressBleeding and target.bleeding == 'active' then target.bleeding = 'suppressed' end
+    end
     if a.blunt then p.bluntRecoveryAt = nil end
     if a.blunt or a.bruise or a.fracture then p.blunt = math.min(p.blunt, Config.Wounds.TreatmentRiskMax) end
     if a.cut or a.shot or a.bleeding then p.sharp = math.min(p.sharp, Config.Wounds.TreatmentRiskMax) end

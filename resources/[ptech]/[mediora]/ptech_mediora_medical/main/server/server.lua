@@ -61,7 +61,8 @@ local supplyPrices = {
     pmediora_suturekit = 100000,
     pmediora_needleandthread = 50000,
     pmediora_burncream = 100000,
-    pmediora_splint = 150000,
+    pmediora_splint = 150000, -- 過去カルテの明細用
+    pmediora_protectivecast = 50000,
 }
 
 local treatmentNames = {
@@ -600,6 +601,7 @@ lib.callback.register('ptech_mediora_medical:reviveChart', function(src, target,
                 chart.reviving = nil
                 chart.revived = true
                 MedicalWoundServer.updateDeath(target)
+                MedicalWoundServer.assignCrutch(target, 'revive')
                 saveChart(chart)
                 return { ok = true }
             end
@@ -684,59 +686,61 @@ lib.callback.register('ptech_mediora_medical:billChart', function(src, target, c
     end
     return { ok = true }
 end)
--- Temporary debug command. Keep this list aligned with Logistics BoxContents.
-local debugTreatmentItems = {
-    'pmediora_ivdrip',
-    'pmediora_firstaidkit',
-    'pmediora_bandage',
-    'pmediora_splint',
-    'pmediora_icepack',
-    'pmediora_bulletextractionkit',
-    'pmediora_surgicalforceps',
-    'pmediora_suturekit',
-    'pmediora_needleandthread',
-    'pmediora_burncream',
-    'pmediora_coolingspray',
-    'pmediora_medicatedbandage',
-    'pmediora_protectivecast',
-    'pmediora_painkiller',
-    'pmediora_hemostatic',
-}
-
+local refillingKits = {}
 RegisterCommand('medkit30', function(src)
-    if src <= 0 then return end
-
+    if src <= 0 or refillingKits[src] then return end
     local function reply(message, kind)
         TriggerClientEvent('ox_lib:notify', src, { title = '治療道具の補充', description = message, type = kind })
     end
-    if GetResourceState('ox_inventory') ~= 'started' then
-        reply('インベントリが起動していません。', 'error')
-        return
-    end
-
-    local inventory = exports.ox_inventory
-    if not inventory:GetInventory(src) then
-        reply('インベントリを取得できませんでした。', 'error')
-        return
-    end
-    local added, failed = 0, {}
-    for _, item in ipairs(debugTreatmentItems) do
-        local missing = 30 - (inventory:GetItemCount(src, item) or 0)
-        if missing > 0 then
-            if inventory:CanCarryItem(src, item, missing) and inventory:AddItem(src, item, missing) then
-                added = added + missing
-            else
-                failed[#failed + 1] = item
+    refillingKits[src] = true
+    local ok = pcall(function()
+        if GetResourceState('ox_inventory') ~= 'started' then
+            reply('インベントリが起動していません。', 'error')
+            return
+        end
+        local inventory = exports.ox_inventory
+        local slots = inventory:GetInventoryItems(src)
+        if type(slots) ~= 'table' then
+            reply('所持品を取得できませんでした。', 'error')
+            return
+        end
+        local owned = {}
+        for _, slot in pairs(slots) do
+            if type(slot) ~= 'table' or type(slot.name) ~= 'string'
+                or not MedicalWounds.finite(slot.count) or slot.count < 0 or slot.count % 1 ~= 0 then
+                reply('所持数を確認できませんでした。', 'error')
+                return
+            end
+            owned[slot.name] = (owned[slot.name] or 0) + slot.count
+        end
+        local amounts = { pmediora_tablet = 1 }
+        for name, item in pairs(Config.Wounds.Items) do
+            if not item.suppressFracture and not item.suppressBleeding then amounts[name] = 30 end
+        end
+        local items = {}
+        for name in pairs(amounts) do items[#items + 1] = name end
+        table.sort(items)
+        local added, failed = 0, {}
+        for _, item in ipairs(items) do
+            local missing = amounts[item] - (owned[item] or 0)
+            if missing > 0 then
+                if inventory:CanCarryItem(src, item, missing) and inventory:AddItem(src, item, missing) then
+                    added = added + missing
+                else
+                    failed[#failed + 1] = item
+                end
             end
         end
-    end
-    if #failed > 0 then
-        reply(('合計 %d 個補充しました。補充できなかった道具: %s'):format(added, table.concat(failed, ', ')), 'error')
-    elseif added > 0 then
-        reply(('不足分を合計 %d 個補充しました。'):format(added), 'success')
-    else
-        reply('すべての治療道具を30個以上所持しています。', 'inform')
-    end
+        if #failed > 0 then
+            reply(('合計 %d 個補充しました。補充できなかった道具: %s'):format(added, table.concat(failed, ', ')), 'error')
+        elseif added > 0 then
+            reply(('不足分を合計 %d 個補充しました。'):format(added), 'success')
+        else
+            reply('治療道具は各30個、タブレットは1個以上所持しています。', 'inform')
+        end
+    end)
+    refillingKits[src] = nil
+    if not ok then reply('所持品の確認または補充に失敗しました。', 'error') end
 end, true)
 
 -- The chart is historical. Only the current episode's pending restoration can be treated.
