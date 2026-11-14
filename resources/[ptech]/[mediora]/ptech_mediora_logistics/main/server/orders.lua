@@ -178,7 +178,7 @@ lib.callback.register(prefix .. 'catalog', function(source)
         id = id,
         label = item.label,
         description = item.description,
-        image = item.image,
+        image = item.client and item.client.image or item.image,
         treatment = treatment,
         price = item.buyPrice,
         available = available,

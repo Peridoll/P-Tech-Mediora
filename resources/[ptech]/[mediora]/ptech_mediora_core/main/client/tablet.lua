@@ -216,6 +216,14 @@ for route, action in pairs(shopRoutes) do
         if not ok then
             print(('[ptech_mediora_core] shop %s callback failed: %s'):format(action, tostring(result)))
         end
+        if ok and type(result) == 'table' and result.ok and action == 'catalog' then
+            for _, item in pairs(result.items or {}) do
+                local definition = exports.ox_inventory:Items(item.id)
+                local client = definition and definition.client
+                local image = client and client.image or (definition and definition.image)
+                if type(image) == 'string' and image ~= '' then item.image = image end
+            end
+        end
         cb(ok and type(result) == 'table' and result or { ok = false, error = '注文結果を確認できません。注文履歴を確認してください。' })
     end)
 end

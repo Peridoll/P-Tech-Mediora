@@ -5,8 +5,8 @@
 
 アイテム名は pmediora_tablet、呼び出し先は ptech_mediora_core.useTablet。
 ox_inventory の data/items.lua には install/ox_inventory/items.lua の項目を統合します。
-画像は install/ox_inventory/images/pmediora_tablet.png を
-ox_inventory/web/images/ に配置します。
+画像は install/ox_inventory/items.lua の client.image に指定した公開GitHub URLから読み込みます。
+アイテム定義を導入先へ統合するときは、client.image のURLも反映してください。
 
 Core差し替え後にサーバーコンソールで restart ptech_mediora_core を実行。
 アイテム定義も変更した場合、開発サーバーで ox_inventory の再起動も必要です。
