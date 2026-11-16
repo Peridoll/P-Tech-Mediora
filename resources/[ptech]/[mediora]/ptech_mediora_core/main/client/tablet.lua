@@ -187,7 +187,7 @@ RegisterNUICallback('tabletOpenChart', function(data, cb)
 end)
 
 exports('openTablet', openTablet)
-for _, route in ipairs({ 'tabletAccess', 'tabletHome', 'tabletPersonnel', 'tabletPersonnelAction', 'tabletResources', 'tabletResourceAction' }) do
+for _, route in ipairs({ 'tabletAccess', 'tabletHome', 'tabletAnnouncementSave', 'tabletPersonnel', 'tabletPersonnelAction', 'tabletResources', 'tabletResourceAction' }) do
     local callbackRoute = route
     RegisterNUICallback(callbackRoute, function(data, cb)
         if not opened then cb({ ok = false, error = 'closed' }) return end

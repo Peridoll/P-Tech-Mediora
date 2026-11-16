@@ -4,6 +4,20 @@
   【  】
 
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
+-- Medicalの導入用アイテム定義は、テーブル内へ貼り付ける形式。
+local medicalItemsSource = LoadResourceFile('ptech_mediora_medical', 'install/ox_inventory/items.lua')
+if medicalItemsSource then
+  local readItems, parseError = load('return {\n' .. medicalItemsSource .. '\n}',
+    '@mediora-medical-item-catalog', 't', {})
+  if not readItems then error(parseError) end
+  local medicalItems = readItems()
+  for id, item in pairs(medicalItems) do
+    if Config.Items[id] == nil then Config.Items[id] = item end
+  end
+else
+  print('[mediora logistics] Medical item catalog is unavailable; check the installed resource path.')
+end
+
 local pointById, hospitalById, itemById = {}, {}, Config.Items
 local weightedContentsByRarity = {}
 local rarityOrder = { 'C', 'UC', 'R', 'SR', 'UR' }

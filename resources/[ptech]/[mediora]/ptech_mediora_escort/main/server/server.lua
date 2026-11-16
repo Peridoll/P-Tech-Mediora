@@ -101,6 +101,19 @@ local function release(carrier)
         TriggerClientEvent('ptech_mediora_escort:client:removeTarget',carrier,rec.target,rec.ticket)
     end
 end
+-- Bed transfers are authorized by Seating before releasing the carry session.
+exports('PreparePatientBed', function(actor, patient)
+    if GetInvokingResource() ~= 'ptech_omnite_seating' then return false end
+    actor, patient = tonumber(actor), tonumber(patient)
+    if not actor or not patient or actor == patient or not validPed(actor) or not validPed(patient)
+        or not ems(actor) or not living(actor) or not sameBucket(actor, patient)
+        or not nearPed(actor, patient, Config.TargetDistance + 2) then return false end
+    if active[patient] or (held[patient] and held[patient] ~= actor) then return false end
+    if held[patient] then release(actor) end
+    vehicleBound[patient] = nil
+    return true
+end)
+
 local function stopNovaEscort(src)
     if GetResourceState('nova-escort')~='started' then return end
     local state=Player(src).state

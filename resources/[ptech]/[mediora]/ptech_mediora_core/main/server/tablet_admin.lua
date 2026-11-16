@@ -151,9 +151,119 @@ lib.callback.register('ptech_mediora_core:tabletPersonnelAction', function(sourc
     return result
 end)
 
+
+local announcementKey = 'tabletHomeAnnouncements'
+local function validAnnouncementText(value, limit)
+    if type(value) ~= 'string' or #value > limit * 4 then return false end
+    local length = utf8.len(value)
+    return length ~= nil and length > 0 and length <= limit and value:find('%S') ~= nil
+end
+
+local function validAnnouncementState(state)
+    if type(state) ~= 'table' or type(state.items) ~= 'table'
+        or type(state.revision) ~= 'number' or state.revision < 0 or state.revision % 1 ~= 0
+        or type(state.nextId) ~= 'number' or state.nextId < 1 or state.nextId % 1 ~= 0 then return false end
+    local ids = {}
+    for _, item in ipairs(state.items) do
+        if type(item) ~= 'table' or type(item.id) ~= 'number' or item.id < 1
+            or item.id % 1 ~= 0 or item.id >= state.nextId or ids[item.id]
+            or not validAnnouncementText(item.title, 120) or not validAnnouncementText(item.body, 4000) then return false end
+        ids[item.id] = true
+    end
+    return true
+end
+
+-- Configured notices seed the state until its first successful tablet save.
+local announcementState = { revision = 0, nextId = 1, items = {} }
+for _, item in ipairs(Config.Tablet.HomeAnnouncements or {}) do
+    if validAnnouncementText(item.title, 120) and validAnnouncementText(item.body, 4000) then
+        announcementState.items[#announcementState.items + 1] = {
+            id = announcementState.nextId, title = item.title, body = item.body,
+        }
+        announcementState.nextId = announcementState.nextId + 1
+    end
+end
+local savedAnnouncements = GetResourceKvpString(announcementKey)
+if savedAnnouncements then
+    local ok, state = pcall(json.decode, savedAnnouncements)
+    if ok and validAnnouncementState(state) then
+        announcementState = state
+    else
+        announcementState = nil
+        print('[ptech_mediora_core] Saved home announcements could not be read')
+    end
+end
+
+lib.callback.register('ptech_mediora_core:tabletAnnouncementSave', function(source, request)
+    local manager = getPersonnelManager(source)
+    if not manager then return { ok = false, error = 'お知らせの編集には上官以上の権限が必要です。' } end
+    if not announcementState then return { ok = false, error = 'お知らせを保存できません。管理者に確認してください。' } end
+    if type(request) ~= 'table' then return { ok = false, error = '投稿内容を確認してください。' } end
+    if request.revision ~= announcementState.revision then
+        return { ok = false, error = 'ほかの職員がお知らせを更新しました。ホームを開き直して内容を確認してください。' }
+    end
+    local title = type(request.title) == 'string' and request.title:match('^%s*(.-)%s*$')
+    local body = type(request.body) == 'string' and request.body:match('^%s*(.-)%s*$')
+    if not validAnnouncementText(title, 120) or not validAnnouncementText(body, 4000) then
+        return { ok = false, error = '見出しは120文字、本文は4000文字以内で入力してください。' }
+    end
+    local index
+    if request.id ~= nil then
+        for i, item in ipairs(announcementState.items) do
+            if item.id == request.id then index = i; break end
+        end
+        if not index then return { ok = false, error = '編集するお知らせが見つかりません。' } end
+    elseif #announcementState.items >= 50 then
+        return { ok = false, error = 'お知らせは50件まで掲載できます。' }
+    end
+
+    local nextState = {
+        revision = announcementState.revision + 1,
+        nextId = announcementState.nextId,
+        items = {},
+    }
+    for i, item in ipairs(announcementState.items) do nextState.items[i] = item end
+    local item = {
+        id = index and request.id or nextState.nextId,
+        title = title, body = body, author = characterName(manager), updatedAt = os.time(),
+    }
+    if index then nextState.items[index] = item
+    else
+        table.insert(nextState.items, 1, item)
+        nextState.nextId = nextState.nextId + 1
+    end
+    local encoded = json.encode(nextState)
+    local ok, err = pcall(function()
+        SetResourceKvp(announcementKey, encoded)
+        assert(GetResourceKvpString(announcementKey) == encoded, 'announcement persistence failed')
+    end)
+    if not ok then
+        -- The write may have succeeded before its acknowledgement failed.
+        local stored = GetResourceKvpString(announcementKey)
+        if stored then
+            local decoded, state = pcall(json.decode, stored)
+            announcementState = decoded and validAnnouncementState(state) and state or nil
+        end
+        print(('[ptech_mediora_core] Home announcement save failed: %s'):format(tostring(err)))
+        return { ok = false, error = '保存結果を確認できませんでした。ホームを開き直して確認してください。' }
+    end
+    announcementState = nextState
+    return { ok = true }
+end)
+
 lib.callback.register('ptech_mediora_core:tabletAccess', function(source)
     if not hasTablet(source) then return { ok = false, error = 'item_required' } end
-    return { ok = true, admin = isAdmin(source), personnel = getPersonnelManager(source) ~= nil }
+    local player = exports.qbx_core:GetPlayer(source)
+    local data = player and player.PlayerData
+    if not data then return { ok = false, error = 'player_unavailable' } end
+    local job = data.job or {}
+    return {
+        ok = true, admin = isAdmin(source), personnel = getPersonnelManager(source) ~= nil,
+        profile = {
+            name = characterName(data),
+            role = job.grade and job.grade.name or job.label or '役職未設定',
+        },
+    }
 end)
 
 lib.callback.register('ptech_mediora_core:tabletHome', function(source, request)
@@ -177,7 +287,10 @@ lib.callback.register('ptech_mediora_core:tabletHome', function(source, request)
         end
     end
     table.sort(roster, function(a, b) return a.name < b.name end)
-    return { ok = true, count = count, roster = includeRoster and roster or nil, announcements = Config.Tablet.HomeAnnouncements or {} }
+    return { ok = true, count = count, roster = includeRoster and roster or nil, announcements = announcementState and announcementState.items or {},
+        announcementRevision = announcementState and announcementState.revision or 0,
+        announcementError = not announcementState and 'お知らせを読み込めませんでした。管理者に確認してください。' or nil,
+        canEditAnnouncements = announcementState ~= nil and getPersonnelManager(source) ~= nil }
 end)
 
 local resourceLocks = {}

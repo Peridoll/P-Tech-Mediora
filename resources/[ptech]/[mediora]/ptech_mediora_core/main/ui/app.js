@@ -223,6 +223,7 @@ function render() {
 }
 
 window.addEventListener('message', (event) => {
+    if (event.source && event.source !== window && event.source !== window.parent) return;
     const data = event.data || {};
     if (data.action === 'panelPosition') {
         clearPanelDrag();

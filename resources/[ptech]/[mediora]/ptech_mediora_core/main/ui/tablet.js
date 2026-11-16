@@ -47,6 +47,22 @@
             return await response.json();
         } finally { clearTimeout(timeout); }
     }
+
+    function closeNotifications() {
+        element('notifications').hidden = true;
+        element('notifications-toggle').setAttribute('aria-expanded', 'false');
+    }
+    element('notifications-toggle').addEventListener('click', () => {
+        const expanded = element('notifications').hidden;
+        element('notifications').hidden = !expanded;
+        element('notifications-toggle').setAttribute('aria-expanded', String(expanded));
+    });
+    document.addEventListener('pointerdown', event => {
+        if (!event.target.closest('.tablet-topbar')) closeNotifications();
+    });
+    element('notice-list-toggle').addEventListener('click', () => openNotice());
+    element('home-notices-empty').addEventListener('click', () => openNotice());
+
     let page = 'home';
     let chartRequest = 0;
     let charts = [];
@@ -460,71 +476,193 @@
         }
     });
 
+
+    let announcementRevision = 0;
+    let editorRevision = 0;
+    let homeCanEdit = false;
+    let announcementSaving = false;
+    let editingAnnouncementId;
+    let announcements = [];
+    let activeAnnouncementId;
+    let pendingNoticeNew = false;
+    function announcementMeta(announcement) {
+        return [announcement.author, announcement.updatedAt ? new Date(announcement.updatedAt * 1000).toLocaleString('ja-JP') : ''].filter(Boolean).join(' ／ ');
+    }
+    function openNotice(id, create = false) {
+        selectPage('notices');
+        activeAnnouncementId = id;
+        pendingNoticeNew = create;
+        element('notice-page-heading').focus({ preventScroll: true });
+    }
+    function resetAnnouncementEditor() {
+        element('notice-editor').hidden = true;
+        element('notice-layout').hidden = false;
+        element('notice-form').reset();
+        element('notice-editor-status').textContent = '';
+        editingAnnouncementId = undefined;
+    }
+    function editAnnouncement(announcement) {
+        if (page !== 'notices' || !homeCanEdit || announcementSaving) return;
+        editingAnnouncementId = announcement?.id;
+        editorRevision = announcementRevision;
+        element('notice-editor-title').textContent = announcement ? 'お知らせを編集' : 'お知らせを投稿';
+        element('notice-title').value = announcement?.title || '';
+        element('notice-body').value = announcement?.body || '';
+        element('notice-editor-status').textContent = '';
+        element('notice-layout').hidden = true;
+        element('notice-editor').hidden = false;
+        element('notice-title').focus();
+    }
+    function renderNoticePage() {
+        const list = element('notice-page-list');
+        list.replaceChildren();
+        const current = announcements.find(item => item.id === activeAnnouncementId) || announcements[0];
+        activeAnnouncementId = current?.id;
+        for (const announcement of announcements) {
+            const row = document.createElement('li');
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'tablet-notice-list-item';
+            button.setAttribute('aria-current', announcement === current ? 'true' : 'false');
+            const title = document.createElement('strong');
+            title.textContent = announcement.title;
+            const meta = document.createElement('small');
+            meta.textContent = announcementMeta(announcement);
+            button.append(title, meta);
+            button.addEventListener('click', () => {
+                if (announcementSaving) return;
+                activeAnnouncementId = announcement.id;
+                resetAnnouncementEditor();
+                renderNoticePage();
+                element('notice-detail-title').focus({ preventScroll: true });
+            });
+            row.append(button);
+            list.append(row);
+        }
+        element('notice-page-empty').hidden = !!current;
+        element('notice-detail').hidden = !current;
+        element('notice-detail-title').textContent = current?.title || '';
+        element('notice-detail-body').textContent = current?.body || '';
+        element('notice-detail-meta').textContent = current ? announcementMeta(current) : '';
+        element('notice-detail-edit').hidden = !homeCanEdit || !current;
+        element('notice-page-new').hidden = !homeCanEdit;
+    }
+    element('notice-new').addEventListener('click', () => openNotice(undefined, true));
+    element('notice-page-new').addEventListener('click', () => editAnnouncement());
+    element('notice-detail-edit').addEventListener('click', () => editAnnouncement(announcements.find(item => item.id === activeAnnouncementId)));
+    element('notice-cancel').addEventListener('click', () => {
+        resetAnnouncementEditor();
+        element(homeCanEdit && activeAnnouncementId !== undefined ? 'notice-detail-edit' : 'notice-page-heading').focus();
+    });
+    function refreshAnnouncements() {
+        if (announcementSaving) return;
+        pendingNoticeNew = false;
+        resetAnnouncementEditor();
+        loadHome();
+    }
+    element('home-refresh').addEventListener('click', refreshAnnouncements);
+    element('notice-page-refresh').addEventListener('click', refreshAnnouncements);
+    element('notice-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!opened || page !== 'notices' || !homeCanEdit || announcementSaving) return;
+        const version = homeRequest;
+        const payload = {
+            id: editingAnnouncementId, revision: editorRevision,
+            title: element('notice-title').value.trim(), body: element('notice-body').value.trim(),
+        };
+        announcementSaving = true;
+        element('notice-save').disabled = true;
+        element('notice-cancel').disabled = true;
+        element('notice-editor-status').textContent = '保存しています…';
+        try {
+            const result = await post('tabletAnnouncementSave', payload);
+            if (!opened || page !== 'notices' || version !== homeRequest) return;
+            if (!result.ok) throw new Error(result.error || '保存できませんでした。');
+            activeAnnouncementId = payload.id;
+            resetAnnouncementEditor();
+            await loadHome();
+        } catch (error) {
+            if (opened && page === 'notices' && version === homeRequest) {
+                element('notice-editor-status').textContent = error.message || '保存結果を確認できませんでした。更新して確認してください。';
+            }
+        } finally {
+            announcementSaving = false;
+            element('notice-save').disabled = false;
+            element('notice-cancel').disabled = false;
+        }
+    });
+
     let homeRequest = 0;
     function resetHome() {
         homeRequest++;
+        homeCanEdit = false;
+        announcements = [];
+        activeAnnouncementId = undefined;
+        pendingNoticeNew = false;
+        element('notice-new').hidden = true;
+        element('notice-page-new').hidden = true;
+        resetAnnouncementEditor();
+        element('notice-list-toggle').hidden = true;
         element('home-overview').hidden = true;
-        element('home-roster').hidden = true;
-        element('home-duty').setAttribute('aria-expanded', 'false');
-        element('home-count').textContent = '—';
         element('home-notices').replaceChildren();
-        element('home-roster-list').replaceChildren();
+        element('notice-page-list').replaceChildren();
+        element('notice-detail').hidden = true;
+        element('notice-page-empty').hidden = true;
         element('home-status').textContent = '';
+        element('notice-page-status').textContent = '';
     }
-    async function loadHome(roster = false) {
+    async function loadHome() {
         const version = ++homeRequest;
-        const isCurrent = () => opened && page === 'home' && version === homeRequest;
-        const notice = element(roster ? 'home-roster-status' : 'home-status');
-        notice.textContent = roster ? '隊員を確認しています…' : '院内情報を確認しています…';
+        const isCurrent = () => opened && ['home', 'notices'].includes(page) && version === homeRequest;
+        const notice = element(page === 'notices' ? 'notice-page-status' : 'home-status');
+        notice.textContent = 'お知らせを確認しています…';
         try {
-            const result = preview ? { ok: true, count: 0, roster: [], announcements: [] } : await post('tabletHome', { roster });
+            const result = preview ? { ok: true, announcements: [] } : await post('tabletHome');
             if (!isCurrent()) return;
-            if (!result.ok) throw new Error(result.error || '院内情報を取得できませんでした。');
-            element('home-count').textContent = result.count;
+            if (!result.ok) throw new Error(result.error || 'お知らせを取得できませんでした。');
             notice.textContent = '';
-            if (roster) {
-                const list = element('home-roster-list');
-                list.replaceChildren();
-                for (const medic of Array.isArray(result.roster) ? result.roster : []) {
-                    const row = document.createElement('li');
-                    const name = document.createElement('span');
-                    const grade = document.createElement('small');
-                    name.textContent = medic.name;
-                    grade.textContent = medic.grade;
-                    row.append(name, grade);
-                    list.append(row);
-                }
-                if (!list.childElementCount) notice.textContent = '勤務中の隊員はいません。';
-            } else {
-                const notices = element('home-notices');
-                notices.replaceChildren();
-                for (const announcement of Array.isArray(result.announcements) ? result.announcements : []) {
-                    const entry = document.createElement('details');
-                    const title = document.createElement('summary');
-                    const body = document.createElement('p');
-                    title.textContent = announcement.title;
-                    body.textContent = announcement.body;
-                    entry.append(title, body);
-                    notices.append(entry);
-                }
-                element('home-notices-empty').hidden = notices.childElementCount > 0;
-                element('home-overview').hidden = false;
+            announcementRevision = result.announcementRevision;
+            homeCanEdit = result.canEditAnnouncements === true;
+            announcements = Array.isArray(result.announcements) ? result.announcements : [];
+            element('notice-new').hidden = !homeCanEdit;
+            const notices = element('home-notices');
+            notices.replaceChildren();
+            for (const announcement of announcements.slice(0, 1)) {
+                const entry = document.createElement('button');
+                entry.type = 'button';
+                entry.className = 'tablet-notice-card';
+                const title = document.createElement('strong');
+                title.className = 'tablet-notice-card-title';
+                title.textContent = announcement.title;
+                const excerpt = document.createElement('span');
+                excerpt.className = 'tablet-notice-card-excerpt';
+                const body = String(announcement.body || '');
+                excerpt.textContent = body.length > 100 ? body.slice(0, 100) + '…' : body;
+                const meta = document.createElement('small');
+                meta.className = 'tablet-notice-meta';
+                meta.textContent = announcementMeta(announcement);
+                const link = document.createElement('span');
+                link.className = 'tablet-notice-card-link';
+                link.textContent = '詳しく見る →';
+                entry.append(title, excerpt, meta, link);
+                entry.addEventListener('click', () => openNotice(announcement.id));
+                notices.append(entry);
+            }
+            element('home-notices-empty').textContent = result.announcementError || '掲載中のお知らせはありません。';
+            element('home-notices-empty').hidden = notices.childElementCount > 0;
+            element('notice-list-toggle').hidden = false;
+            element('home-overview').hidden = false;
+            element('notice-page-empty').textContent = result.announcementError || '掲載中のお知らせはありません。';
+            renderNoticePage();
+            if (page === 'notices' && pendingNoticeNew) {
+                pendingNoticeNew = false;
+                editAnnouncement();
             }
         } catch (error) {
             if (!isCurrent()) return;
-            notice.textContent = error.message || '院内情報を取得できませんでした。';
-            if (roster) element('home-roster-list').replaceChildren();
+            notice.textContent = error.message || 'お知らせを取得できませんでした。';
         }
     }
-    element('home-duty').addEventListener('click', () => {
-        const details = element('home-roster');
-        const open = details.hidden;
-        details.hidden = !open;
-        element('home-duty').setAttribute('aria-expanded', String(open));
-        element('home-roster-list').replaceChildren();
-        if (open) loadHome(true);
-        else homeRequest++;
-    });
 
     let canManagePersonnel = false;
     let personnelRequest = 0;
@@ -668,25 +806,116 @@
         if (version === personnelRequest) loadPersonnel(message);
     });
 
+
+    const townUrl = 'https://peridoll.github.io/NOVILL-TOWN/';
+    const townFrame = element('town-frame');
+    const townStatus = element('town-status');
+    function resetTown() {
+        townFrame.removeAttribute('src');
+        townStatus.textContent = '';
+    }
+    function loadTown() {
+        townStatus.textContent = '読み込み中…';
+        townFrame.src = townUrl;
+    }
+    townFrame.addEventListener('load', () => {
+        if (opened && page === 'town' && townFrame.getAttribute('src') === townUrl) townStatus.textContent = '';
+    });
+    element('town-reload').addEventListener('click', loadTown);
+
+
+    const menuSidebar = document.querySelector('.tablet-sidebar');
+    const menuIndicator = element('selection-indicator');
+    let menuAnimation;
+    function moveMenuIndicator(animate = true) {
+        const selected = menuSidebar.querySelector('button.selected');
+        if (!opened || !selected || selected.hidden) {
+            menuAnimation?.cancel();
+            menuAnimation = undefined;
+            menuIndicator.hidden = true;
+            return;
+        }
+        const wasVisible = !menuIndicator.hidden;
+        menuIndicator.hidden = false;
+        menuIndicator.style.height = selected.getBoundingClientRect().height + 'px';
+        const sidebarBounds = menuSidebar.getBoundingClientRect();
+        const targetY = selected.getBoundingClientRect().top - sidebarBounds.top + menuSidebar.scrollTop;
+        const currentY = wasVisible
+            ? menuIndicator.getBoundingClientRect().top - sidebarBounds.top + menuSidebar.scrollTop : targetY;
+        menuAnimation?.cancel();
+        menuAnimation = undefined;
+        const transform = y => 'translateX(-50%) translateY(' + y + 'px)';
+        menuIndicator.style.transform = transform(targetY);
+        if (!animate || !wasVisible || Math.abs(targetY - currentY) < .5 || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        const direction = Math.sign(targetY - currentY) || 1;
+        const effect = menuIndicator.animate([
+            { transform: transform(currentY), filter: 'blur(0px)', offset: 0 },
+            { transform: transform(currentY - direction * 4), filter: 'blur(.3px)', offset: .12, easing: 'cubic-bezier(.2,.7,.25,1)' },
+            { transform: transform(targetY + direction * 11), filter: 'blur(2.4px)', offset: .66, easing: 'cubic-bezier(.45,0,.85,.4)' },
+            { transform: transform(targetY - direction * 3), filter: 'blur(.5px)', offset: .86, easing: 'cubic-bezier(.2,.8,.25,1)' },
+            { transform: transform(targetY), filter: 'blur(0px)', offset: 1 },
+        ], { duration: 390, fill: 'both', easing: 'cubic-bezier(.2,.8,.2,1)' });
+        menuAnimation = effect;
+        effect.onfinish = () => {
+            if (menuAnimation !== effect) return;
+            menuAnimation = undefined;
+            effect.cancel();
+            moveMenuIndicator(false);
+        };
+    }
+    const menuObserver = new ResizeObserver(() => {
+        if (!menuAnimation) moveMenuIndicator(false);
+    });
+    menuObserver.observe(menuSidebar);
+    menuObserver.observe(document.querySelector('.tablet-navigation'));
+    menuSidebar.addEventListener('scroll', () => {
+        if (!menuAnimation) moveMenuIndicator(false);
+    });
+    window.addEventListener('resize', () => moveMenuIndicator(false));
+
+    let noticeTransition;
+    function animateNoticePage(entering = false) {
+        noticeTransition?.cancel();
+        noticeTransition = undefined;
+        if (!entering || !opened || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        const effect = element('notices').animate([
+            { opacity: 0, transform: 'translateY(14px)' },
+            { opacity: 1, transform: 'translateY(0)' },
+        ], { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)' });
+        noticeTransition = effect;
+        effect.onfinish = () => {
+            if (noticeTransition !== effect) return;
+            noticeTransition = undefined;
+            effect.cancel();
+        };
+    }
+
     function selectPage(next) {
         if (next !== 'shop' && shopDrag) clearShopDrag();
-        if (!['home', 'charts', 'shop', 'personnel', 'settings', 'resources'].includes(next)) return;
+        if (!['home', 'notices', 'charts', 'incidents', 'expenses', 'shop', 'town', 'personnel', 'settings', 'resources'].includes(next)) return;
         if (next === 'resources' && !isAdmin) return;
         if (next === 'personnel' && !canManagePersonnel) return;
+        closeNotifications();
         if (page === 'personnel' && next !== page) resetPersonnel();
+        if (page === 'town' && next !== page) resetTown();
         if (next !== page && (page === 'charts' || next === 'charts')) resetCharts();
-        if (page === 'home' || next === 'home') resetHome();
+        if (['home', 'notices'].includes(page) || ['home', 'notices'].includes(next)) resetHome();
         if (next === 'shop' && page !== 'shop') shopSearch.value = '';
+        const openingNotices = next === 'notices' && page !== 'notices';
         page = next;
-        for (const id of ['home', 'charts', 'shop', 'personnel', 'settings', 'resources']) element(id).hidden = id !== page;
+        for (const id of ['home', 'notices', 'charts', 'incidents', 'expenses', 'shop', 'town', 'personnel', 'settings', 'resources']) element(id).hidden = id !== page;
+        animateNoticePage(openingNotices);
         element('admin-link').hidden = !isAdmin;
         document.querySelectorAll('.tablet-sidebar [data-page]').forEach((button) => {
             const selected = button.dataset.page === page;
-            const parent = page === 'resources' && button.dataset.page === 'settings';
+            const parent = (page === 'resources' && button.dataset.page === 'settings')
+                || (['town', 'notices'].includes(page) && button.dataset.page === 'home');
             button.classList.toggle('selected', selected || parent);
             button.setAttribute('aria-current', selected ? 'page' : parent ? 'location' : 'false');
         });
-        if (page === 'home') loadHome();
+        moveMenuIndicator();
+        if (page === 'home' || page === 'notices') loadHome();
+        if (page === 'town') loadTown();
         if (page === 'shop') loadShop();
         if (page === 'personnel') loadPersonnel();
         if (page === 'resources') refreshResources();
@@ -698,6 +927,8 @@
             if (!opened || version !== request) return;
             if (!result.ok) throw new Error(result.error || 'unavailable');
             isAdmin = result.admin === true;
+            element('profile-name').textContent = result.profile?.name || '—';
+            element('profile-role').textContent = result.profile?.role || '—';
             canManagePersonnel = result.personnel === true;
             element('personnel-link').hidden = !canManagePersonnel;
             element('admin-link').hidden = !isAdmin;
@@ -817,10 +1048,14 @@
     function setVisible(visible) {
         if (!visible) clearShopDrag();
         opened = visible;
+        if (!visible) moveMenuIndicator(false);
+        closeNotifications();
+        element('profile-name').textContent = '—';
+        element('profile-role').textContent = '—';
         animateTablet(visible);
         const version = ++request;
         resetCharts();
-        if (!visible) resetHome();
+        if (!visible) { animateNoticePage(); resetHome(); resetTown(); }
         busy = false;
         operating = false;
         element('resource-status').dataset.phase = '';
@@ -845,7 +1080,8 @@
             }
         }
     }
-    window.addEventListener('message', ({ data }) => {
+    window.addEventListener('message', ({ data, source }) => {
+        if (source && source !== window && source !== window.parent) return;
         if (data?.action === 'progress:theme') applyProgressTheme(data.theme);
         if (data?.action === 'tablet:open') {
             openGeneration = data.generation;
@@ -856,6 +1092,37 @@
     });
     window.addEventListener('keydown', (event) => {
         if (!opened) return;
+        if ((event.key === 'ArrowUp' || event.key === 'ArrowDown')
+            && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+            && !event.isComposing
+            && !event.target?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) {
+            const menu = [...tablet.querySelectorAll('.tablet-sidebar button[data-page]:not(:disabled)')]
+                .filter(button => !button.closest('[hidden]') && button.getClientRects().length > 0);
+            if (menu.length) {
+                event.preventDefault();
+                if (event.repeat) return;
+                const current = menu.findIndex(button => button.classList.contains('selected'));
+                const direction = event.key === 'ArrowDown' ? 1 : -1;
+                const index = current < 0 ? 0 : (current + direction + menu.length) % menu.length;
+                const target = menu[index];
+                target.focus({ preventScroll: true });
+                const bounds = menuSidebar.getBoundingClientRect();
+                const targetBounds = target.getBoundingClientRect();
+                if (targetBounds.top < bounds.top) {
+                    menuSidebar.scrollTop += targetBounds.top - bounds.top;
+                } else if (targetBounds.bottom > bounds.bottom) {
+                    menuSidebar.scrollTop += targetBounds.bottom - bounds.bottom;
+                }
+                target.click();
+                return;
+            }
+        }
+        if (event.key === 'Escape' && !element('notifications').hidden) {
+            event.preventDefault();
+            closeNotifications();
+            element('notifications-toggle').focus();
+            return;
+        }
         if (event.key === 'Escape') { event.preventDefault(); close(); }
         if (event.key === 'Tab') {
             const buttons = [...tablet.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled)')].filter((button) => !button.closest('[hidden]'));

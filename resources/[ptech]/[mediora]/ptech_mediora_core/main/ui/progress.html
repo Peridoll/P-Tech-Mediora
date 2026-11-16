@@ -77,40 +77,108 @@
             <button id="tablet-home-button" type="button" aria-label="タブレットを閉じる" title="タブレットを閉じる (Esc)"></button>
             <div class="tablet-rail">
                 <aside class="tablet-sidebar">
+                    <span id="tablet-selection-indicator" aria-hidden="true" hidden></span>
                     <div class="tablet-brand" role="img" aria-label="P-Tech Mediora">
                         <b>M</b>
                         <span class="tablet-brand-wordmark"><small>P-Tech</small><strong>EDIORA</strong></span>
                     </div>
                     <nav class="tablet-navigation" aria-label="タブレットメニュー">
-                        <button data-page="home" class="selected" aria-label="ホーム" title="ホーム"><i aria-hidden="true">⌂</i><span>ホーム</span></button>
-                        <button data-page="charts" aria-label="カルテ" title="カルテ"><i aria-hidden="true">▤</i><span>カルテ</span></button>
-                        <button data-page="shop" aria-label="物資購入" title="物資購入"><i aria-hidden="true"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h3l2.5 12h12l2-8H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg></i><span>物資購入</span></button>
-                        <button id="tablet-personnel-link" type="button" data-page="personnel" aria-label="マネジメント" title="マネジメント" hidden><i aria-hidden="true">♙</i><span>マネジメント</span></button>
+                        <button data-page="home" class="selected" aria-label="ホーム" title="ホーム"><i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"></path><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg></i><span>ホーム</span></button>
+                        <button data-page="charts" aria-label="カルテ" title="カルテ"><i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="M12 11h4"></path><path d="M12 16h4"></path><path d="M8 11h.01"></path><path d="M8 16h.01"></path></svg></i><span>カルテ</span></button>
+                        <button data-page="incidents" aria-label="事件対応" title="事件対応"><i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 21h20L12 3z"></path><path d="M12 9v5"></path><path d="M12 17h.01"></path></svg></i><span>事件対応</span></button>
+                        <button data-page="expenses" aria-label="経費申請" title="経費申請"><i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3z"></path><path d="M9 7h6M9 11h6M9 15h3"></path></svg></i><span>経費申請</span></button>
+                        <button data-page="shop" aria-label="物資購入" title="物資購入"><i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="21" r="1"></circle><circle cx="19" cy="21" r="1"></circle><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"></path></svg></i><span>物資購入</span></button>
+                        <button id="tablet-personnel-link" type="button" data-page="personnel" aria-label="マネジメント" title="マネジメント" hidden><i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 21a8 8 0 0 0-16 0"></path><circle cx="10" cy="8" r="5"></circle><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"></path></svg></i><span>マネジメント</span></button>
                     </nav>
                     <div class="tablet-sidebar-bottom">
-                        <button data-page="settings" aria-label="設定" title="設定"><i aria-hidden="true">⚙</i><span>設定</span></button>
+                        <button data-page="settings" aria-label="設定" title="設定"><i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"></path><circle cx="12" cy="12" r="3"></circle></svg></i><span>設定</span></button>
                     </div>
                 </aside>
             </div>
             <main class="tablet-main">
+                <header class="tablet-topbar">
+                    <div class="tablet-topbar-account">
+                        <button id="tablet-notifications-toggle" type="button" aria-label="通知" aria-expanded="false" aria-controls="tablet-notifications">
+                            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/>
+                            </svg>
+                        </button>
+                        <div class="tablet-account-profile">
+                            <strong id="tablet-profile-name">—</strong>
+                            <span id="tablet-profile-role">—</span>
+                        </div>
+                    </div>
+                    <section id="tablet-notifications" class="tablet-notifications" aria-label="通知一覧" hidden>
+                        <h2>通知</h2>
+                        <p>現在、通知はありません。</p>
+                    </section>
+                </header>
                 <section id="tablet-home" class="tablet-page" aria-label="ホーム">
-                    <h1>ホーム</h1>
+                    <img class="tablet-home-watermark" src="https://raw.githubusercontent.com/Peridoll/P-Tech-Mediora/refs/heads/feature/dev/assets/branding/ems-logo.svg" alt="" aria-hidden="true" draggable="false" decoding="async">
+                    <div class="tablet-home-heading">
+                        <button id="tablet-town-open" type="button" data-page="town">
+                            <span>NOVILL TOWN</span><small>EMS ガイドを開く ↗</small>
+                        </button>
+                    </div>
                     <p id="tablet-home-status" class="tablet-muted" role="status" aria-live="polite"></p>
                     <section id="tablet-home-overview" class="tablet-home-overview" hidden>
-                        <button id="tablet-home-duty" type="button" aria-expanded="false" aria-controls="tablet-home-roster">
-                            <span>勤務中のEMS</span><strong id="tablet-home-count">—</strong><span>人</span>
-                        </button>
-                        <section id="tablet-home-roster" hidden>
-                            <h2>勤務中の隊員</h2>
-                            <p id="tablet-home-roster-status" class="tablet-muted" role="status"></p>
-                            <ul id="tablet-home-roster-list"></ul>
-                        </section>
                         <section class="tablet-home-notices">
-                            <h2>病院内アナウンス</h2>
-                            <p id="tablet-home-notices-empty" class="tablet-muted">掲載中のお知らせはありません。</p>
+                            <div class="tablet-notice-heading">
+                                <h2>院内のお知らせ</h2>
+                                <div>
+                                    <button id="tablet-notice-list-toggle" type="button" aria-controls="tablet-notices" hidden>一覧を見る</button>
+                                    <button id="tablet-home-refresh" type="button" aria-label="院内情報を更新" title="更新">↻</button>
+                                    <button id="tablet-notice-new" type="button" hidden>＋ 投稿</button>
+                                </div>
+                            </div>
+
+                            <button id="tablet-home-notices-empty" type="button" class="tablet-muted" aria-controls="tablet-notices">掲載中のお知らせはありません。</button>
                             <div id="tablet-home-notices"></div>
                         </section>
                     </section>
+                </section>
+                <section id="tablet-notices" class="tablet-page" aria-labelledby="tablet-notice-page-heading" hidden>
+                    <div class="tablet-page-heading">
+                        <div class="tablet-notice-page-title">
+                            <button id="tablet-notice-back" type="button" data-page="home" aria-label="ホームへ戻る" title="ホームへ戻る">
+                                <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                                <span>戻る</span>
+                            </button>
+                            <h1 id="tablet-notice-page-heading" tabindex="-1">院内のお知らせ</h1>
+                        </div>
+                        <div class="tablet-notice-page-actions">
+                            <button id="tablet-notice-page-refresh" type="button">更新</button>
+                            <button id="tablet-notice-page-new" type="button" hidden>＋ 投稿</button>
+                        </div>
+                    </div>
+                    <p id="tablet-notice-page-status" class="tablet-muted" role="status" aria-live="polite"></p>
+                <section id="tablet-notice-editor" class="tablet-notice-editor" hidden>
+                    <h3 id="tablet-notice-editor-title">お知らせを投稿</h3>
+                    <form id="tablet-notice-form">
+                        <label for="tablet-notice-title">見出し</label>
+                        <input id="tablet-notice-title" type="text" maxlength="120" required>
+                        <label for="tablet-notice-body">本文</label>
+                        <textarea id="tablet-notice-body" rows="5" maxlength="4000" required></textarea>
+                        <p id="tablet-notice-editor-status" role="status" aria-live="polite"></p>
+                        <div>
+                            <button id="tablet-notice-cancel" type="button">キャンセル</button>
+                            <button id="tablet-notice-save" type="submit">保存する</button>
+                        </div>
+                    </form>
+                </section>
+                    <div id="tablet-notice-layout" class="tablet-notice-layout">
+                        <nav class="tablet-notice-index" aria-label="お知らせ一覧">
+                            <h2>お知らせ一覧</h2>
+                            <ul id="tablet-notice-page-list"></ul>
+                        </nav>
+                        <p id="tablet-notice-page-empty" class="tablet-muted" hidden>掲載中のお知らせはありません。</p>
+                        <article id="tablet-notice-detail" class="tablet-notice-detail" hidden>
+                            <h2 id="tablet-notice-detail-title" tabindex="-1"></h2>
+                            <p id="tablet-notice-detail-meta" class="tablet-notice-meta"></p>
+                            <p id="tablet-notice-detail-body"></p>
+                            <button id="tablet-notice-detail-edit" type="button" hidden>この記事を編集</button>
+                        </article>
+                    </div>
                 </section>
                 <section id="tablet-charts" class="tablet-page" hidden>
                     <h1>カルテ確認</h1>
@@ -131,6 +199,14 @@
                             <ul id="tablet-chart-injuries" aria-label="記録された負傷"></ul>
                         </article>
                     </div>
+                </section>
+                <section id="tablet-incidents" class="tablet-page" hidden>
+                    <h1>事件対応</h1>
+                    <p class="tablet-muted">事件対応の機能は準備中です。</p>
+                </section>
+                <section id="tablet-expenses" class="tablet-page" hidden>
+                    <h1>経費申請</h1>
+                    <p class="tablet-muted">経費申請の機能は準備中です。</p>
                 </section>
                 <section id="tablet-shop" class="tablet-page" hidden>
                     <div class="shop-hero">
@@ -193,6 +269,16 @@
                             <button id="tablet-personnel-hire" type="button" disabled>採用</button>
                         </div>
                     </div>
+                </section>
+                <section id="tablet-town" class="tablet-page tablet-town-page" aria-label="NOVILL TOWN" hidden>
+                    <div class="tablet-town-toolbar">
+                        <strong>NOVILL TOWN</strong>
+                        <span id="tablet-town-status" role="status" aria-live="polite"></span>
+                        <button id="tablet-town-reload" type="button">再読み込み</button>
+                        <button data-page="home" type="button">ホームへ</button>
+                    </div>
+                    <iframe id="tablet-town-frame" title="NOVILL TOWN EMS ガイド"
+                        sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="no-referrer"></iframe>
                 </section>
                 <section id="tablet-settings" class="tablet-page" hidden>
                     <h1>設定</h1>
@@ -264,7 +350,8 @@
                 setTemplate(currentTemplate.template, false, currentTemplate.templateSvg);
             }
         }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-progress-theme'] });
-        window.addEventListener('message', ({ data }) => {
+        window.addEventListener('message', ({ data, source }) => {
+            if (source && source !== window && source !== window.parent) return;
             if (data?.action === 'progress:show') {
                 animation?.cancel();
                 currentId = data.id;
