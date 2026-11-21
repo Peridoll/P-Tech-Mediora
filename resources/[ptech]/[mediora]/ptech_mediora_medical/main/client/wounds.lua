@@ -1,3 +1,14 @@
+-- Use Wasabi's removal API so its persisted timer is cleared as well as the prop.
+RegisterNetEvent('ptech_mediora_medical:removeCrutch', function()
+    if source ~= 65535 or GetResourceState('wasabi_crutch') ~= 'started' then return end
+    local ok, result = pcall(function()
+        return exports.wasabi_crutch:RemoveCrutch(GetPlayerServerId(PlayerId()))
+    end)
+    if not ok or result == false then
+        lib.notify({title='松葉杖', description='解除できませんでした。EMSに再操作を依頼してください', type='error'})
+    end
+end)
+
 MedicalWoundClient = {}
 local C, W = MedicalWoundClient, MedicalWounds
 local snapshot, citizenId, token, revision, sequence = nil, nil, nil, -1, 0
@@ -52,6 +63,7 @@ RegisterCommand('medwounds', function()
     showAccumulation(snapshot)
 end, false)
 
+local refreshing
 local weapons = {}
 for name, kind in pairs(Config.Wounds.WeaponKinds) do weapons[GetHashKey(name)] = kind end
 
@@ -62,6 +74,7 @@ end
 
 local function reset()
     generation = generation + 1
+    refreshing = nil
     accumulationVisible = false
     autoReviveDisplay = nil
     removeAutoRevivePanel()
@@ -82,17 +95,26 @@ function C.refresh()
     local id = identity()
     if type(id) ~= 'string' or id == '' then if citizenId then reset() end; return end
     if citizenId ~= id then reset(); citizenId = id end
-    if token then
-        if autoReviveDisplay ~= nil then renderAutoRevivePanel(autoReviveDisplay) end
-        return
-    end
+    if autoReviveDisplay ~= nil then renderAutoRevivePanel(autoReviveDisplay) end
+    if refreshing == generation then return false end
     local request = generation
+    refreshing = request
     local ok, result = pcall(lib.callback.await, 'ptech_mediora_medical:wounds:get', false, id)
-    if request ~= generation or identity() ~= id then return end
-    if ok and result and result.token and C.apply(result) then
-        token, sequence = result.token, result.sequence or 0
-        lastPed, lastHealth = PlayerPedId(), GetEntityHealth(PlayerPedId())
+    if refreshing == request then refreshing = nil end
+    if request ~= generation or identity() ~= id then return false end
+    local newSession = ok and type(result) == 'table' and result.token and result.token ~= token
+    -- A restarted server session may have a lower revision. Old-session replies
+    -- remain rejected by the generation/character checks above.
+    local previousRevision = revision
+    if newSession then revision = -1 end
+    if ok and type(result) == 'table' and result.token and C.apply(result) then
+        sequence = newSession and (result.sequence or 0) or math.max(sequence, result.sequence or 0)
+        token = result.token
+        if newSession then lastPed, lastHealth = PlayerPedId(), GetEntityHealth(PlayerPedId()) end
+        return true
     end
+    revision = previousRevision
+    return false
 end
 
 function C.send(part, kind, percent)
@@ -184,6 +206,17 @@ function C.step()
         or (IsPedEvasiveDiving and IsPedEvasiveDiving(ped)) or C.sliding == true
     if not action then wasAction = false; return end
     if wasAction or now < nextAction or IsPedRagdoll(ped) then return end
+    -- Never trip from an old client snapshot after a missed treatment/reset update.
+    local hasFracture = false
+    for _, part in ipairs(Medical.fractureParts) do
+        if snapshot.parts[part].fracture then hasFracture = true; break end
+    end
+    if not hasFracture then return end
+    if not C.refresh() then nextAction = now + 500; return end
+    if PlayerPedId() ~= ped or not alive() or IsPedInAnyVehicle(ped, true)
+        or IsPedSwimming(ped) or IsPedSwimmingUnderWater(ped) or IsEntityAttached(ped) then return end
+    if not (IsPedJumping(ped) or IsPedClimbing(ped) or IsPedVaulting(ped) or IsPedDiving(ped)
+        or (IsPedEvasiveDiving and IsPedEvasiveDiving(ped)) or C.sliding == true) then return end
     local ordered = {}
     for _, part in ipairs(Medical.fractureParts) do
         if snapshot.parts[part].fracture == 'active' then ordered[#ordered + 1] = part end

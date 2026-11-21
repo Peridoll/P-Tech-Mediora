@@ -14,9 +14,33 @@ local progressThemes = { mediora = true, blue = true, amber = true, violet = tru
 local progressTheme = GetResourceKvpString('progressTheme')
 if not progressThemes[progressTheme] then progressTheme = 'mediora' end
 
+-- Keep game mouse/click actions out of the tablet without blocking movement controls.
+local mouseHandoff = false
+local tabletMouseControls = {
+    1, 2, 3, 4, 5, 6, -- camera look
+    12, 13, 14, 15, 16, 17, 37, -- weapon wheel and mouse wheel
+    24, 25, 257, -- attack and aim
+    140, 141, 142, 143, 263, 264, -- melee attacks and alternate attacks
+    68, 69, 70, 91, 92, 114, -- vehicle aim and attacks
+}
+local function guardTabletMouse(openingGeneration)
+    CreateThread(function()
+        while opened and generation == openingGeneration do
+            if not mouseHandoff then
+                for _, control in ipairs(tabletMouseControls) do
+                    DisableControlAction(0, control, true)
+                end
+                DisablePlayerFiring(PlayerId(), true)
+            end
+            Wait(0)
+        end
+    end)
+end
+
 local function closeTablet(keepFocus)
     if not opened then return end
     opened = false
+    mouseHandoff = false
     generation = generation + 1
     if focused and keepFocus ~= true then SetNuiFocus(false, false) end
     focused = false
@@ -38,6 +62,8 @@ local function openTablet()
     opened = true
     generation = generation + 1
     local openingGeneration = generation
+    mouseHandoff = false
+    guardTabletMouse(openingGeneration)
     SendNUIMessage({ action = 'tablet:open', generation = openingGeneration })
     SetTimeout(2000, function()
         if not opened or focused or generation ~= openingGeneration then return end
@@ -125,6 +151,16 @@ RegisterCommand('mediora_tablet_close', function()
     closeTablet()
 end, false)
 
+RegisterNUICallback('tabletCrutch', function(data, cb)
+    if not opened or GetResourceState('ptech_mediora_medical') ~= 'started' then
+        cb({error='Medicalを利用できません'}); return
+    end
+    local requestGeneration = generation
+    local ok, result = pcall(lib.callback.await, 'ptech_mediora_medical:crutchControl', false, data)
+    if not opened or requestGeneration ~= generation then cb({error='操作を終了しました'}); return end
+    cb(ok and type(result)=='table' and result or {error='松葉杖の操作に失敗しました'})
+end)
+
 RegisterNUICallback('tabletChartPatients', function(_, cb)
     if not opened or GetResourceState('ptech_mediora_medical') ~= 'started' then
         cb({ error = 'Medicalのカルテを照会できません' }); return
@@ -172,12 +208,14 @@ RegisterNUICallback('tabletOpenChart', function(data, cb)
     end
     openingChart = true
     -- Release Core before Medical acquires the cursor. Closing Core afterward only hides its UI.
+    mouseHandoff = true
     SetNuiFocus(false, false)
     local ok, displayed = pcall(function()
         return exports.ptech_mediora_medical:openCharts(target, data.chartId)
     end)
     openingChart = false
     if not ok or displayed ~= true then
+        mouseHandoff = false
         if opened then SetNuiFocus(true, true) end
         cb({ error = 'カルテを開けませんでした。勤務状態を確認してください' })
         return

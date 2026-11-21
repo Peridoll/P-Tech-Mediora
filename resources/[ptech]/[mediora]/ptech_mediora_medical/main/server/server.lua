@@ -713,7 +713,7 @@ RegisterCommand('medkit30', function(src)
             end
             owned[slot.name] = (owned[slot.name] or 0) + slot.count
         end
-        local amounts = { pmediora_tablet = 1 }
+        local amounts = { pmediora_tablet = 1, pmediora_medicalbag = 1 }
         for name, item in pairs(Config.Wounds.Items) do
             if not item.suppressFracture and not item.suppressBleeding then amounts[name] = 30 end
         end
@@ -736,7 +736,7 @@ RegisterCommand('medkit30', function(src)
         elseif added > 0 then
             reply(('不足分を合計 %d 個補充しました。'):format(added), 'success')
         else
-            reply('治療道具は各30個、タブレットは1個以上所持しています。', 'inform')
+            reply('治療道具は各30個、タブレットと医療バッグは各1個以上所持しています。', 'inform')
         end
     end)
     refillingKits[src] = nil

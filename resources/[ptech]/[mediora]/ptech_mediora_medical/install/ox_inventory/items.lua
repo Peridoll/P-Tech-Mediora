@@ -6,6 +6,16 @@
   --   effect = { type = 'revive' },
   --   client = { image = 'https://raw.githubusercontent.com/Peridoll/P-Tech-Mediora/feature/dev/resources/%5Bptech%5D/%5Bmediora%5D/ptech_mediora_medical/install/ox_inventory/images/pmediora_defibrillator.png' },
   -- },
+-- 医療バッグ: この項目もox_inventory/data/items.luaのreturnテーブル内へ追加。
+-- Medicalをox_inventoryより後に起動すると標準コンテナとして登録されます。
+-- containers.luaへの追記は不要。容量と収納対象はMedicalのConfig.MedicalBagで設定。
+-- 既存のmedbag（Wasabi用）とは別アイテムです。画像はGitHubの既存医療アイコンを使用。
+  ['pmediora_medicalbag'] = {
+    label = '医療バッグ', englishLabel = 'Medical Bag',
+    description = '医療道具を収納できる携帯バッグ。使うと中身を開く。',
+    weight = 1000, stack = false, close = false, consume = 0,
+    client = { image = 'https://raw.githubusercontent.com/Peridoll/P-Tech-Mediora/feature/dev/resources/%5Bptech%5D/%5Bmediora%5D/ptech_mediora_medical/install/ox_inventory/images/pmediora_firstaidkit.png' },
+  },
   ['pmediora_firstaidkit'] = {
     label = '救急キット', englishLabel = 'First Aid Kit',
     description = '体力を大幅に回復させる',

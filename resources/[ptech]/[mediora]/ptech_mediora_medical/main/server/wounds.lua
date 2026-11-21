@@ -42,6 +42,58 @@ function S.assignCrutch(src, reason)
     return true
 end
 
+-- Every tablet action rechecks duty, routing bucket, distance and character identity.
+lib.callback.register('ptech_mediora_medical:crutchControl', function(src, request)
+    local medic = exports.qbx_core:GetPlayer(src)
+    if not medic or not Medical.allowed(medic.PlayerData) then return {error='勤務中の医療職のみ利用できます'} end
+    if GetResourceState('wasabi_crutch') ~= 'started' then return {error='松葉杖の機能が停止中です'} end
+    if type(request) ~= 'table' then return {error='操作内容を確認してください'} end
+    local actorPed = GetPlayerPed(src)
+    if actorPed == 0 or Medical.death(Player(src).state.dead, medic.PlayerData.metadata) ~= '死亡・瀕死フラグなし' then
+        return {error='現在の状態では操作できません'}
+    end
+    local function nearby(target)
+        local ped = GetPlayerPed(target)
+        return target ~= src and ped ~= 0 and GetPlayerRoutingBucket(src) == GetPlayerRoutingBucket(target)
+            and #(GetEntityCoords(actorPed) - GetEntityCoords(ped)) <= Config.Distance
+    end
+    if request.action == 'list' then
+        local list = {}
+        for _, value in ipairs(GetPlayers()) do
+            local target = tonumber(value)
+            local p = target and nearby(target) and exports.qbx_core:GetPlayer(target)
+            if p then
+                local data, info = p.PlayerData, p.PlayerData.charinfo or {}
+                list[#list+1] = {id=target, citizenId=data.citizenid,
+                    name=((info.firstname or '')..' '..(info.lastname or '')):gsub('^%s*(.-)%s*$', '%1')}
+            end
+        end
+        table.sort(list, function(a,b) return a.id < b.id end)
+        return {ok=true, patients=list}
+    end
+    if request.action ~= 'give' and request.action ~= 'remove' then return {error='操作内容を確認してください'} end
+    local target = request.targetId
+    if not Medical.validId(target) or not nearby(target) then return {error='対象の患者に近づいてください'} end
+    local p = exports.qbx_core:GetPlayer(target)
+    if not p or p.PlayerData.citizenid ~= request.citizenId then return {error='患者を選び直してください'} end
+    if request.action == 'remove' then
+        crutchAssignments[p.PlayerData.citizenid] = nil
+        TriggerClientEvent('ptech_mediora_medical:removeCrutch', target)
+        return {ok=true, message='松葉杖の解除を指示しました'}
+    end
+    local minutes = request.minutes
+    if type(minutes) ~= 'number' or minutes ~= minutes or minutes % 1 ~= 0 or minutes < 1 or minutes > 60 then
+        return {error='使用時間は1〜60分の整数で指定してください'}
+    end
+    if Medical.death(Player(target).state.dead, p.PlayerData.metadata) ~= '死亡・瀕死フラグなし' then
+        return {error='蘇生してから松葉杖を付けてください'}
+    end
+    local ok, result = pcall(function() return exports.wasabi_crutch:GiveCrutchTarget(target, minutes) end)
+    if not ok or result == false then return {error='松葉杖を付けられませんでした'} end
+    crutchAssignments[p.PlayerData.citizenid] = os.time() + minutes * 60
+    return {ok=true, message=('松葉杖を%d分に設定しました'):format(minutes)}
+end)
+
 function S.get(src)
     local state, id = patient(src)
     if not state then return { error = '患者情報を取得できません' } end

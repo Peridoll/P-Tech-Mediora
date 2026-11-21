@@ -63,6 +63,47 @@
     element('notice-list-toggle').addEventListener('click', () => openNotice());
     element('home-notices-empty').addEventListener('click', () => openNotice());
 
+    let crutchBusy = false;
+    let crutchPatients = [];
+    async function crutchAction(action) {
+        if (crutchBusy) return;
+        const patient = crutchPatients.find(p => String(p.id) === element('crutch-patient').value);
+        if (action !== 'list' && !patient) {
+            element('crutch-status').textContent = '近くの患者を取得して選択してください。';
+            return;
+        }
+        crutchBusy = true;
+        const controls = element('crutch-form').querySelectorAll('button, input, select');
+        controls.forEach(control => control.disabled = true);
+        element('crutch-status').textContent = '処理中…';
+        try {
+            const result = await post('tabletCrutch', { action, targetId: patient?.id,
+                citizenId: patient?.citizenId, minutes: Number(element('crutch-minutes').value) });
+            if (action === 'list') {
+                crutchPatients = result.patients || [];
+                element('crutch-patient').replaceChildren();
+                for (const p of crutchPatients) {
+                    const option = document.createElement('option');
+                    option.value = String(p.id);
+                    option.textContent = `${p.name || '氏名未登録'}（ID ${p.id}）`;
+                    element('crutch-patient').append(option);
+                }
+            }
+            element('crutch-status').textContent = result.error || result.message
+                || (crutchPatients.length ? '患者を選択して操作してください。' : '近くに患者がいません。');
+        } catch {
+            element('crutch-status').textContent = '通信に失敗しました。もう一度操作してください。';
+        } finally {
+            crutchBusy = false;
+            controls.forEach(control => control.disabled = false);
+        }
+    }
+    element('crutch-refresh').addEventListener('click', () => crutchAction('list'));
+    element('crutch-form').addEventListener('submit', event => {
+        event.preventDefault();
+        crutchAction(event.submitter?.value);
+    });
+
     let page = 'home';
     let chartRequest = 0;
     let charts = [];

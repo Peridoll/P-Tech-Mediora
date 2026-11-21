@@ -27,6 +27,13 @@ Config = {
     'ambulance'
   },
   Distance = 3.0,
+  -- 医療バッグ。追加した外部製の薬はExtraItemsへアイテムIDを追加する。
+  -- Config.Wounds.Itemsの治療道具は自動的に収納対象になります。
+  MedicalBag = {
+    Slots = 24,
+    MaxWeight = 30000, -- g / バッグ本体の重量は含まない
+    ExtraItems = { 'pmediora_tablet' },
+  },
   Cooldown = 1000,
 
 
@@ -113,7 +120,7 @@ Config = {
 
   Fracture
   ｜Severity        : 旧形式互換の重度打撲判定。新方式の抽選には使用しない
-  ｜ObserveInterval : 本人識別・初回同期の再試行間隔（ミリ秒）
+  ｜ObserveInterval : 本人識別・負傷状態の定期再同期の間隔（ミリ秒）
   ｜RagdollDuration : ジャンプ・乗り越え・登り動作で転倒する時間（ミリ秒）
   ｜RagdollCooldown : 連続転倒を抑える間隔（ミリ秒）
 

@@ -17,6 +17,7 @@ dependencies {
 shared_scripts {
     '@ox_lib/init.lua',
     'config/config.lua',
+    'config/command_help.lua',
 }
 
 server_scripts {
@@ -24,6 +25,7 @@ server_scripts {
     'config/tablet_home.lua',
     'main/server/server.lua',
     'main/server/tablet_admin.lua',
+    'main/server/command_help.lua',
 }
 
 ui_page 'main/ui/progress.html'
@@ -39,4 +41,5 @@ client_scripts {
     'main/client/progress.lua',
     'main/client/action_panel.lua',
     'main/client/tablet.lua',
+    'main/client/command_help.lua',
 }

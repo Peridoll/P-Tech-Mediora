@@ -701,6 +701,53 @@ class ClientTest(unittest.TestCase):
     def test_active_fracture_trips_but_walking_and_dead_do_not(self):
         self.check("damage(1,'blunt',70);MedicalWoundClient.step();assert(trips==0);jumping=true;MedicalWoundClient.step();assert(trips==1);MedicalWoundClient.step();assert(trips==1);players[1].PlayerData.metadata.isdead=true;clock=clock+4000;MedicalWoundClient.step();assert(trips==1)")
 
+    def test_missed_fracture_clear_does_not_leave_phantom_trips(self):
+        self.check("""
+        damage(1,'blunt',70)
+        local original=TriggerClientEvent
+        TriggerClientEvent=function() end
+        assert(MedicalWoundServer.clearFractures(1,'right_leg'))
+        TriggerClientEvent=original
+        jumping=true
+        MedicalWoundClient.step()
+        assert(trips==0,'cleared server fracture must not cause a client trip')
+        """)
+
+    def test_periodic_refresh_recovers_missed_fracture_updates(self):
+        self.check("""
+        local original=TriggerClientEvent
+        TriggerClientEvent=function() end
+        damage(1,'blunt',70)
+        TriggerClientEvent=original
+        assert(MedicalWoundClient.refresh())
+        jumping=true
+        MedicalWoundClient.step()
+        assert(trips==1,'periodic sync recovers newly assigned fracture')
+        """)
+
+    def test_failed_action_refresh_never_trips_from_stale_state(self):
+        self.check("""
+        damage(1,'blunt',70)
+        lib.callback.await=function() error('disconnected') end
+        jumping=true
+        MedicalWoundClient.step()
+        assert(trips==0)
+        """)
+
+    def test_refresh_preserves_unsent_hp_loss_and_monotonic_damage_sequence(self):
+        self.check("""
+        healths[1]=180
+        assert(MedicalWoundClient.refresh())
+        MedicalWoundClient.sampleDamage('WEAPON_UNARMED','right_leg')
+        assert(state(1).parts.right_leg.blunt==30,'periodic refresh must not swallow HP damage')
+        local session=syncPatient(1)
+        assert(session.sequence==1)
+        assert(MedicalWoundClient.refresh())
+        healths[1]=170
+        MedicalWoundClient.sampleDamage('WEAPON_UNARMED','right_leg')
+        assert(syncPatient(1).sequence==2)
+        """)
+
     def test_suppressed_fracture_action_hurts_and_reenters_same_injury_chain(self):
         self.check("MedicalWoundClient.send('right_leg','blunt',70);stock.pmediora_painkiller=1;local task=invoke('treatment:start',1,1,'right_leg','pmediora_painkiller',nil,true);assert(finish(task,1).ok);jumping=true;MedicalWoundClient.step();assert(selfDamage==1 and trips==0);assert(state(1).parts.right_leg.fracture=='active')")
 

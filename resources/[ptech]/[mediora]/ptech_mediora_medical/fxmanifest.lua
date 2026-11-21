@@ -8,5 +8,5 @@ ui_page 'main/ui/index.html'
 files { 'main/ui/index.html', 'main/ui/style.css', 'main/ui/examination.css', 'main/ui/charts.css', 'main/ui/app.js', 'main/ui/progress/*.svg' }
 shared_scripts { '@ox_lib/init.lua', 'config.lua', 'main/shared/shared.lua', 'main/shared/wounds.lua' }
 client_scripts { 'main/client/nui.lua', 'main/client/ui.lua', 'main/client/wounds.lua', 'main/client/treatment.lua', 'main/client/client.lua' }
-server_scripts { '@oxmysql/lib/MySQL.lua', 'main/server/wounds.lua', 'main/server/fractures.lua', 'main/server/server.lua' }
-dependencies { 'ox_lib', 'ox_target', 'qbx_core', 'oxmysql', 'wasabi_ambulance', '/onesync' }
+server_scripts { '@oxmysql/lib/MySQL.lua', 'main/server/containers.lua', 'main/server/wounds.lua', 'main/server/fractures.lua', 'main/server/server.lua' }
+dependencies { 'ox_lib', 'ox_target', 'qbx_core', 'ox_inventory', 'oxmysql', 'wasabi_ambulance', '/onesync' }

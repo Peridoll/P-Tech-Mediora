@@ -438,3 +438,14 @@
 @media (max-width: 720px) {
     #tablet-home { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'guide' 'board' 'status'; }
 }
+
+#tablet-crutch-form { max-width: 560px; padding: 18px 20px; border: 1px solid #dce5e3; border-radius: 10px; background: #fff; }
+#tablet-crutch-form h2 { margin: 0; font-size: 18px; }
+#tablet-crutch-form label { font-size: 12px; color: #527078; }
+#tablet-crutch-form input, #tablet-crutch-form select { min-width: 0; width: 100%; box-sizing: border-box; font: inherit; color: #233e47; border: 1px solid #a9c0bc; border-radius: 7px; background: #fff; padding: 9px 12px; }
+#tablet-crutch-form input { max-width: 130px; }
+#tablet-crutch-form button { font: inherit; cursor: pointer; padding: 9px 14px; border-radius: 7px; background: #dfebe7; color: #24594d; }
+#tablet-crutch-refresh { justify-self: start; }
+#tablet-crutch-form button[value="give"] { background: #216b5d; color: #fff; }
+#tablet-crutch-form button:disabled { opacity: .5; cursor: default; }
+#tablet-crutch-status { margin: 2px 0 0; font-size: 12px; color: #527078; }
