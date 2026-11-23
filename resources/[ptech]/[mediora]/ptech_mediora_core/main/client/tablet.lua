@@ -101,6 +101,9 @@ end)
 
 AddEventHandler('ox_inventory:itemCount', function(itemName, totalCount)
     if opened and itemName == tabletItem and totalCount < 1 then closeTablet() end
+    if opened then
+        SendNUIMessage({ action = 'shop:owned', id = itemName, count = totalCount })
+    end
 end)
 
 RegisterNUICallback('tabletReady', function(_, cb)
@@ -151,15 +154,6 @@ RegisterCommand('mediora_tablet_close', function()
     closeTablet()
 end, false)
 
-RegisterNUICallback('tabletCrutch', function(data, cb)
-    if not opened or GetResourceState('ptech_mediora_medical') ~= 'started' then
-        cb({error='Medicalを利用できません'}); return
-    end
-    local requestGeneration = generation
-    local ok, result = pcall(lib.callback.await, 'ptech_mediora_medical:crutchControl', false, data)
-    if not opened or requestGeneration ~= generation then cb({error='操作を終了しました'}); return end
-    cb(ok and type(result)=='table' and result or {error='松葉杖の操作に失敗しました'})
-end)
 
 RegisterNUICallback('tabletChartPatients', function(_, cb)
     if not opened or GetResourceState('ptech_mediora_medical') ~= 'started' then
@@ -225,7 +219,7 @@ RegisterNUICallback('tabletOpenChart', function(data, cb)
 end)
 
 exports('openTablet', openTablet)
-for _, route in ipairs({ 'tabletAccess', 'tabletHome', 'tabletAnnouncementSave', 'tabletPersonnel', 'tabletPersonnelAction', 'tabletResources', 'tabletResourceAction' }) do
+for _, route in ipairs({ 'tabletAccess', 'tabletHome', 'tabletAnnouncementSave', 'tabletAnnouncementDelete', 'tabletPersonnel', 'tabletPersonnelAction', 'tabletResources', 'tabletResourceAction', 'tabletRescueSave' }) do
     local callbackRoute = route
     RegisterNUICallback(callbackRoute, function(data, cb)
         if not opened then cb({ ok = false, error = 'closed' }) return end
@@ -256,6 +250,7 @@ for route, action in pairs(shopRoutes) do
         end
         if ok and type(result) == 'table' and result.ok and action == 'catalog' then
             for _, item in pairs(result.items or {}) do
+                item.owned = exports.ox_inventory:Search('count', item.id) or 0
                 local definition = exports.ox_inventory:Items(item.id)
                 local client = definition and definition.client
                 local image = client and client.image or (definition and definition.image)

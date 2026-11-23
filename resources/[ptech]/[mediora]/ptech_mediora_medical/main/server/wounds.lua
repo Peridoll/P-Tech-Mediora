@@ -42,57 +42,10 @@ function S.assignCrutch(src, reason)
     return true
 end
 
--- Every tablet action rechecks duty, routing bucket, distance and character identity.
-lib.callback.register('ptech_mediora_medical:crutchControl', function(src, request)
-    local medic = exports.qbx_core:GetPlayer(src)
-    if not medic or not Medical.allowed(medic.PlayerData) then return {error='勤務中の医療職のみ利用できます'} end
-    if GetResourceState('wasabi_crutch') ~= 'started' then return {error='松葉杖の機能が停止中です'} end
-    if type(request) ~= 'table' then return {error='操作内容を確認してください'} end
-    local actorPed = GetPlayerPed(src)
-    if actorPed == 0 or Medical.death(Player(src).state.dead, medic.PlayerData.metadata) ~= '死亡・瀕死フラグなし' then
-        return {error='現在の状態では操作できません'}
-    end
-    local function nearby(target)
-        local ped = GetPlayerPed(target)
-        return target ~= src and ped ~= 0 and GetPlayerRoutingBucket(src) == GetPlayerRoutingBucket(target)
-            and #(GetEntityCoords(actorPed) - GetEntityCoords(ped)) <= Config.Distance
-    end
-    if request.action == 'list' then
-        local list = {}
-        for _, value in ipairs(GetPlayers()) do
-            local target = tonumber(value)
-            local p = target and nearby(target) and exports.qbx_core:GetPlayer(target)
-            if p then
-                local data, info = p.PlayerData, p.PlayerData.charinfo or {}
-                list[#list+1] = {id=target, citizenId=data.citizenid,
-                    name=((info.firstname or '')..' '..(info.lastname or '')):gsub('^%s*(.-)%s*$', '%1')}
-            end
-        end
-        table.sort(list, function(a,b) return a.id < b.id end)
-        return {ok=true, patients=list}
-    end
-    if request.action ~= 'give' and request.action ~= 'remove' then return {error='操作内容を確認してください'} end
-    local target = request.targetId
-    if not Medical.validId(target) or not nearby(target) then return {error='対象の患者に近づいてください'} end
-    local p = exports.qbx_core:GetPlayer(target)
-    if not p or p.PlayerData.citizenid ~= request.citizenId then return {error='患者を選び直してください'} end
-    if request.action == 'remove' then
-        crutchAssignments[p.PlayerData.citizenid] = nil
-        TriggerClientEvent('ptech_mediora_medical:removeCrutch', target)
-        return {ok=true, message='松葉杖の解除を指示しました'}
-    end
-    local minutes = request.minutes
-    if type(minutes) ~= 'number' or minutes ~= minutes or minutes % 1 ~= 0 or minutes < 1 or minutes > 60 then
-        return {error='使用時間は1〜60分の整数で指定してください'}
-    end
-    if Medical.death(Player(target).state.dead, p.PlayerData.metadata) ~= '死亡・瀕死フラグなし' then
-        return {error='蘇生してから松葉杖を付けてください'}
-    end
-    local ok, result = pcall(function() return exports.wasabi_crutch:GiveCrutchTarget(target, minutes) end)
-    if not ok or result == false then return {error='松葉杖を付けられませんでした'} end
-    crutchAssignments[p.PlayerData.citizenid] = os.time() + minutes * 60
-    return {ok=true, message=('松葉杖を%d分に設定しました'):format(minutes)}
-end)
+function S.clearCrutchAssignment(src)
+    local player = exports.qbx_core:GetPlayer(src)
+    if player then crutchAssignments[player.PlayerData.citizenid] = nil end
+end
 
 function S.get(src)
     local state, id = patient(src)
@@ -409,6 +362,7 @@ RegisterCommand('medstarve', function(src, args)
 end, true)
 
 local function inventoryCount(src, item)
+    if MedicalInventory then return MedicalInventory.count(src,item) end
     if GetResourceState('ox_inventory') ~= 'started' then return 0 end
     local ok, count = pcall(function() return exports.ox_inventory:Search(src, 'count', item) end)
     return ok and type(count) == 'number' and count or 0
@@ -421,8 +375,9 @@ end
 
 function S.items(src)
     local items = {}
+    local counts=MedicalInventory and MedicalInventory.counts(src)
     for name, item in pairs(Config.Wounds.Items) do
-        local count = inventoryCount(src, name)
+        local count = counts and (counts[name]or 0)or inventoryCount(src, name)
         if count > 0 then items[#items + 1] = { name = name, label = item.label, count = count } end
     end
     table.sort(items, function(a, b) return a.name < b.name end)
@@ -526,8 +481,23 @@ lib.callback.register('ptech_mediora_medical:treatment:finish', function(src, to
     local plan = usablePlan(valid, task.target, task.plan.part, task.plan.item)
     if not plan or plan.count ~= task.plan.count then release(src); return { error = '必要な処置が変わりました' } end
     -- RemoveItemは成功時だけ。確認から状態更新までyieldを挟まず、患者ロックを保持する。
-    local ok, removed = pcall(function() return exports.ox_inventory:RemoveItem(src, plan.item, plan.count) end)
+    local ok, removed, receipt = pcall(function()
+        if MedicalInventory then return MedicalInventory.remove(src,plan.item,plan.count) end
+        return exports.ox_inventory:RemoveItem(src, plan.item, plan.count)
+    end)
     if not ok or not removed then release(src); return { error = '道具を消費できませんでした。処置は反映していません' } end
+    if receipt then
+        -- Hydrating a saved bag may yield: validate patient/job/revision once more.
+        local refreshed, reason=validate(src,task.target,task.selfUse)
+        local revised=refreshed and usablePlan(refreshed,task.target,task.plan.part,task.plan.item)
+        if not refreshed or refreshed.patientId~=task.patientId or refreshed.medicId~=task.medicId
+            or refreshed.state.revision~=task.revision or not revised or revised.count~=task.plan.count
+            or (not task.selfUse and not MedicalChartAccess(refreshed.patientId,task.chartId)) then
+            MedicalInventory.refund(receipt);release(src)
+            return {error=reason or '患者または処置内容が変わりました。道具を返却しました'}
+        end
+        valid,plan=refreshed,revised
+    end
     local a = plan.actions
     local ped = GetPlayerPed(task.target)
     local max = GetEntityMaxHealth(ped)
@@ -632,3 +602,66 @@ CreateThread(function()
         end
     end
 end)
+
+-- Internal server API for the integrated private-medic treatment; no public heal event/export.
+function S.restorePrivatePatient(target, expectedCitizenId)
+    if not Medical.validId(target) or type(expectedCitizenId)~='string' then return {error='患者情報が無効です'} end
+    local state,id,data=patient(target)
+    if not state or id~=expectedCitizenId then return {error='対象の患者が変わりました'} end
+    if locks[id] then return {error='ほかの医療処置が進行中です'} end
+    local function down(current)
+        local ped=GetPlayerPed(target)
+        local death=Medical.death(Player(target).state.dead,current.metadata)
+        return ped==0 or death=='死亡' or death=='瀕死（laststand）' or GetEntityHealth(ped)<=Config.Wounds.HealthBase
+    end
+    if not down(data) then return {error='蘇生が必要な相手に使用してください'} end
+    if GetResourceState('wasabi_ambulance')~='started' then return {error='蘇生機能が停止中です'} end
+    local needs={}
+    for _,key in ipairs({'hunger','thirst','stress'})do
+        local value=data.metadata and data.metadata[key]
+        if type(value)=='number' then needs[key]=value end
+    end
+    local marker={privateRevive=true}
+    locks[id]=marker
+    local requested=false
+    local ok,result=pcall(function()
+        local issued=exports.wasabi_ambulance:RevivePlayer(target)
+        if issued==false then return {error='蘇生処理を開始できませんでした'} end
+        requested=true
+        local revived=false
+        for _=1,24 do
+            Wait(250)
+            local current=exports.qbx_core:GetPlayer(target)
+            if not current or current.PlayerData.citizenid~=id then return {error='対象が退出または変更されました',changed=true} end
+            if not down(current.PlayerData)then revived=true;break end
+        end
+        if not revived then return {error='蘇生の完了を確認できませんでした',changed=true} end
+        -- Let the stock revive's metadata events settle before preventing needs recovery.
+        Wait(250)
+        local current=exports.qbx_core:GetPlayer(target)
+        if not current or current.PlayerData.citizenid~=id then return {error='対象が変更されました',changed=true} end
+        local metadata=current.PlayerData.metadata or {}
+        for key,saved in pairs(needs)do
+            local value=metadata[key]
+            if type(value)=='number' then
+                local preserved=key=='stress' and math.max(saved,value) or math.min(saved,value)
+                if preserved~=value then exports.qbx_core:SetMetadata(target,key,preserved)end
+            end
+        end
+        state.parts=W.new().parts
+        state.ivCondition,state.deathCause,state.wasDead=nil,nil,false
+        state.lastCause,state.lastCauseAt,state.lastPart,state.lastFatal=nil,nil,nil,nil
+        state.starvationTestUntil=nil
+        state.revision=state.revision+1
+        sync(target)
+        TriggerClientEvent('ptech_mediora_medical:health',target,100,id)
+        if S.assignCrutch then S.assignCrutch(target,'revive')end
+        return {ok=true,changed=true}
+    end)
+    if locks[id]==marker then locks[id]=nil end
+    if not ok then
+        print('[ptech_mediora_medical] private revive failed: '..tostring(result))
+        return {error='蘇生・治療の完了を確認できませんでした',changed=requested}
+    end
+    return result
+end

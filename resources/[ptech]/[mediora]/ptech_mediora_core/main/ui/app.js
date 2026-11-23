@@ -306,4 +306,12 @@ window.addEventListener('message', (event) => {
     }
 });
 
-if (inGame) panelPost('actionPanelReady').catch(console.error);
+async function announceActionPanelReady() {
+    try {
+        const result = await panelPost('actionPanelReady');
+        if (result && result.ok) return;
+    } catch {}
+    // CEFがLuaのNUICallback登録より先に立ち上がった場合も接続をやり直す。
+    setTimeout(announceActionPanelReady, 300);
+}
+if (inGame) announceActionPanelReady();

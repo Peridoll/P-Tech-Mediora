@@ -5,7 +5,7 @@ lua54 'yes'
 name 'ptech_mediora_core'
 author 'P-Tech'
 description 'Mediora Core'
-version '0.2.2'
+version '0.2.3'
 
 dependencies {
     'ox_inventory',

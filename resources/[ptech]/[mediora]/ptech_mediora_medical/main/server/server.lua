@@ -713,7 +713,12 @@ RegisterCommand('medkit30', function(src)
             end
             owned[slot.name] = (owned[slot.name] or 0) + slot.count
         end
-        local amounts = { pmediora_tablet = 1, pmediora_medicalbag = 1 }
+        if MedicalInventory then
+            local counts=MedicalInventory.counts(src)
+            if not counts then reply('バッグを含む所持品を確認できませんでした。','error');return end
+            owned=counts
+        end
+        local amounts = { pmediora_tablet = 1, pmediora_medicalbag = 1, pmediora_phoenixkit = 30 }
         for name, item in pairs(Config.Wounds.Items) do
             if not item.suppressFracture and not item.suppressBleeding then amounts[name] = 30 end
         end
@@ -769,4 +774,40 @@ function MedicalRecordTreatment(target, chartId, item, count, part)
         end
         saveChart(chart)
     end
+end
+
+-- Both chat/server commands and the local command use the same request handler.
+do
+    local function measure(src, first, second)
+        if not Medical.validId(first) or not Medical.validId(second) then
+            return {error='プレイヤーIDを確認してください'}
+        end
+        if not GetPlayerName(first) or not GetPlayerName(second) then
+            return {error='対象のプレイヤーが接続していません'}
+        end
+        local bucket=GetPlayerRoutingBucket(src)
+        if GetPlayerRoutingBucket(first)~=bucket or GetPlayerRoutingBucket(second)~=bucket then
+            return {error='同じインスタンス内のプレイヤーを指定してください'}
+        end
+        local a,b=GetPlayerPed(first),GetPlayerPed(second)
+        if a==0 or b==0 then return {error='対象の位置を取得できません'} end
+        return {distance=#(GetEntityCoords(a)-GetEntityCoords(b))}
+    end
+    lib.callback.register('ptech_mediora_medical:distance', measure)
+    local function request(src, args)
+        if src<=0 then print('[Medical distance] Execute /distance ID1 ID2 in game.'); return end
+        if type(args)~='table' then return end
+        if #args==0 then
+            TriggerClientEvent('ptech_mediora_medical:distance:control',src,{action='toggleOff'})
+            return
+        end
+        local first,second=tonumber(args[1]),tonumber(args[2])
+        local result=#args==2 and measure(src,first,second) or {error='/distance ID1 ID2 の形式で入力してください'}
+        TriggerClientEvent('ptech_mediora_medical:distance:control',src,result.error
+            and {action='error',message=result.error}
+            or {action='start',first=first,second=second,distance=result.distance})
+    end
+    RegisterCommand('distance',request,false)
+    RegisterNetEvent('ptech_mediora_medical:distance:request',function(args) request(source,args) end)
+    print(('[ptech_mediora_medical] distance ready | resource path: %s'):format(GetResourcePath(GetCurrentResourceName())))
 end

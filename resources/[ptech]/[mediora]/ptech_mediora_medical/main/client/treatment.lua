@@ -7,7 +7,9 @@ function T.items()
     local items = {}
     for name, item in pairs(Config.Wounds.Items) do
         local count = 0
-        if GetResourceState('ox_inventory') == 'started' then
+        if MedicalInventoryClient then
+            count=MedicalInventoryClient.count(name)
+        elseif GetResourceState('ox_inventory') == 'started' then
             local ok, value = pcall(function() return exports.ox_inventory:Search('count', name) end)
             if ok and type(value) == 'number' then count = value end
         end

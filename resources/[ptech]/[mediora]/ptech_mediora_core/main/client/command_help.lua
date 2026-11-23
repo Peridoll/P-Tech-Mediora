@@ -93,8 +93,15 @@ local function scheduleRefresh()
     end)
 end
 
+local function isCommandResource(resource)
+    for _, command in ipairs(settings.commands) do
+        if command.resource == resource then return true end
+    end
+    return false
+end
+
 AddEventHandler('onClientResourceStart', function(resource)
-    if resource == resourceName then scheduleRefresh(); return end
+    if resource == resourceName or isCommandResource(resource) then scheduleRefresh(); return end
     for _, name in ipairs(settings.chatResources) do
         if resource == name then scheduleRefresh(); return end
     end
@@ -105,5 +112,7 @@ AddEventHandler('onClientResourceStop', function(resource)
     if resource == resourceName then
         generation = generation + 1
         removeSuggestions()
+    elseif isCommandResource(resource) then
+        scheduleRefresh()
     end
 end)

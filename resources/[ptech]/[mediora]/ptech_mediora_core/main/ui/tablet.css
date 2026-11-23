@@ -449,3 +449,11 @@
 #tablet-crutch-form button[value="give"] { background: #216b5d; color: #fff; }
 #tablet-crutch-form button:disabled { opacity: .5; cursor: default; }
 #tablet-crutch-status { margin: 2px 0 0; font-size: 12px; color: #527078; }
+
+.tablet-notice-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#tablet-notices .tablet-notice-danger { background: #f6e9e6; color: #9b493e; }
+#tablet-notices .tablet-notice-danger:hover { background: #efd9d3; }
+#tablet-notices button:disabled { opacity: .5; cursor: wait; }
+.tablet-notice-delete-confirm { margin-top: 18px; padding: 16px; border: 1px solid #e5c8c1; border-radius: 9px; background: #fffbfa; }
+.tablet-notice-delete-confirm h3 { margin: 0 0 10px; font-size: 14px; color: #8b483d; }
+.tablet-notice-delete-confirm p { margin: 0 0 16px; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }

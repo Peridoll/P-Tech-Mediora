@@ -1,0 +1,43 @@
+#private-billing[hidden],#private-billing [hidden]{display:none!important}
+#private-billing{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;background:rgba(9,22,29,.34);font-family:Arial,'Noto Sans JP',sans-serif;color:#243e43}
+#private-billing *{box-sizing:border-box}
+#private-billing .pb-card{width:440px;max-width:94vw;max-height:94vh;overflow:auto;background:#f8faf8;border:1px solid #e2ebe5;border-radius:24px;box-shadow:0 30px 90px #102e3655;padding:28px}
+#private-billing button,#private-billing input{font:inherit}
+#private-billing button{cursor:pointer;border:0;background:none;color:inherit}
+#private-billing button:disabled{opacity:.45;cursor:default}
+#private-billing button:focus-visible,#private-billing input:focus-visible{outline:2px solid #2b8c79;outline-offset:3px}
+#private-billing .pb-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding:0;border:0;background:none}
+#private-billing .pb-brand{display:flex;gap:10px;align-items:center;font-size:26px;font-weight:800;letter-spacing:-1px}
+#private-billing .pb-brand>span{display:grid;place-items:center;width:40px;height:40px;border-radius:13px;background:#287564;color:#fff;font-size:25px}
+#private-billing .pb-brand small{display:block;font-size:9px;letter-spacing:2px;margin-top:4px;color:#79918a}
+#private-billing #pb-close{font-size:26px;color:#68807a}
+#private-billing nav{display:flex;gap:5px;border-bottom:1px solid #dce5df;margin-bottom:24px}
+#private-billing nav button{padding:10px 12px;font-size:12px;color:#748981}
+#private-billing nav button.active{border-bottom:2px solid #287564;color:#287564;font-weight:bold}
+#private-billing .pb-heading>span{color:#548f7e;font-size:11px;letter-spacing:2px}
+#private-billing h1{font-size:20px;letter-spacing:-.4px;margin:9px 0 22px;color:#243e43}
+#private-billing .pb-heading p{font-size:11px;color:#748981}
+#private-billing .pb-patient{display:flex;flex-direction:column;gap:8px;padding:18px;background:#edf2ed;border-radius:12px;margin-bottom:24px}
+#private-billing .pb-patient span,#private-billing .pb-amount-label,#private-billing .pb-note-label{font-size:11px;color:#71867d;display:block}
+#private-billing .pb-patient strong{font-size:17px}
+#private-billing .pb-amount{display:flex;align-items:center;gap:10px;border-bottom:1px solid #bccfc4;padding:8px 0}
+#private-billing .pb-amount>span{font-size:24px;color:#779489}
+#private-billing #pb-amount{width:100%;min-width:0;background:transparent;border:0;color:#244c41;font-size:40px;font-weight:700;letter-spacing:-1px;padding:0;appearance:textfield;box-shadow:none}
+#private-billing #pb-amount::-webkit-inner-spin-button{appearance:none}
+#private-billing .pb-amount-foot{display:flex;justify-content:space-between;font-size:11px;color:#748981;margin:10px 0 26px}
+#private-billing #pb-reset{font-size:10px;text-decoration:underline}
+#private-billing #pb-note{width:100%;border:1px solid #d6e2d9;border-radius:8px;background:#fff;padding:11px;color:#294a41;margin:8px 0 18px}
+#private-billing .pb-destination{display:flex;justify-content:space-between;gap:12px;font-size:11px;margin-bottom:20px}
+#private-billing .pb-destination strong{text-align:right}
+#private-billing .pb-bonus{display:grid;grid-template-columns:1fr auto;gap:8px;background:#e9f2eb;border:1px solid #d4e6d7;padding:15px;border-radius:12px;font-size:11px;color:#406b53}
+#private-billing .pb-bonus strong{font-size:15px}
+#private-billing .pb-bonus small{grid-column:1/-1;font-size:10px;color:#78917c}
+#private-billing #pb-send{display:flex;justify-content:space-between;align-items:center;width:100%;padding:16px 20px;background:#287564;color:#fff;border-radius:12px;margin-top:22px;font-weight:700;font-size:14px}
+#private-billing #pb-result{font-size:12px;color:#b25042;line-height:1.7;margin:14px 0 0;white-space:pre-wrap}
+#private-billing #pb-result.pb-success{color:#287564}
+#private-billing footer{display:block;font-size:9px;letter-spacing:2px;text-align:center;color:#95a59c;margin-top:24px;padding:0;background:none;border:0}
+#private-billing #pb-history-list{font-size:12px;min-height:180px;max-height:50vh;overflow:auto}
+#private-billing .pb-log{padding:14px;background:#edf2ed;border-radius:10px;margin-bottom:9px;font-size:11px;line-height:1.8}
+#private-billing .pb-log>div:first-child{font-weight:700;font-size:12px}
+#private-billing .pb-pages{display:flex;justify-content:space-between;align-items:center;font-size:11px;margin-top:14px}
+@media(max-height:800px){#private-billing .pb-card{padding:20px}#private-billing .pb-header{margin-bottom:16px}#private-billing h1{margin-bottom:14px}#private-billing .pb-patient{margin-bottom:16px;padding:13px}#private-billing .pb-amount-foot{margin-bottom:18px}#private-billing footer{margin-top:16px}}

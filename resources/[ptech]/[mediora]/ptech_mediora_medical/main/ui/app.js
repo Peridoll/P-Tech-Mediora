@@ -1,3 +1,49 @@
+/* Persistent distance HUD: registered before the tablet UI and outside its hidden panels. */
+(() => {
+  const panel = document.createElement('div');
+  panel.id = 'medical-distance-hud';
+  panel.hidden = true;
+  panel.setAttribute('role', 'status');
+  panel.style.cssText = 'position:fixed;top:7vh;left:50%;transform:translateX(-50%);z-index:2147483647;min-width:260px;max-width:90vw;padding:12px 24px;border:1px solid #68d8c3;border-radius:10px;background:rgba(12,26,32,.94);color:#ecfff9;text-align:center;font-family:Segoe UI,Meiryo,sans-serif;pointer-events:none;box-shadow:0 4px 20px #0005;';
+  const label = document.createElement('div');
+  label.style.cssText = 'font-size:13px;letter-spacing:.06em;color:#8fdbcb;';
+  const value = document.createElement('div');
+  value.style.cssText = 'font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.4;';
+  panel.append(label, value);
+  document.body.append(panel);
+  let expiry;
+  let measured = false;
+  let updatedAt = 0;
+  window.addEventListener('message', ({ data }) => {
+    if (data?.action !== 'medical:distance') return;
+    clearTimeout(expiry);
+    measured = false;
+    if (!data.visible) { panel.hidden = true; return; }
+    panel.hidden = false;
+    if (typeof data.message === 'string') {
+      label.textContent = '距離計測';
+      value.style.fontSize = '16px';
+      value.textContent = data.message;
+      panel.style.borderColor = data.kind === 'error' ? '#ef9191' : '#68d8c3';
+      expiry = setTimeout(() => { panel.hidden = true; }, 6000);
+      return;
+    }
+    if (!Number.isInteger(data.first) || !Number.isInteger(data.second) || !Number.isFinite(data.distance)) {
+      panel.hidden = true;
+      return;
+    }
+    measured = true;
+    updatedAt = Date.now();
+    label.textContent = `ID ${data.first} − ID ${data.second}`;
+    value.style.fontSize = '28px';
+    value.textContent = `${data.distance.toFixed(2)} m`;
+    panel.style.borderColor = '#68d8c3';
+  });
+  setInterval(() => {
+    if (measured && Date.now() - updatedAt > 2000) value.textContent = '接続確認中…';
+  }, 500);
+})();
+
 'use strict';
 const GetParentResourceName = window.GetParentResourceName || window.parent.GetParentResourceName;
 const byId = id => document.getElementById(id);

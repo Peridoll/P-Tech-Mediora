@@ -103,7 +103,8 @@ local function release(carrier)
 end
 -- Bed transfers are authorized by Seating before releasing the carry session.
 exports('PreparePatientBed', function(actor, patient)
-    if GetInvokingResource() ~= 'ptech_omnite_seating' then return false end
+    local caller=GetInvokingResource()
+    if caller ~= 'ptech_omnite_seating' and caller ~= 'ptech_omnite_toolbox' then return false end
     actor, patient = tonumber(actor), tonumber(patient)
     if not actor or not patient or actor == patient or not validPed(actor) or not validPed(patient)
         or not ems(actor) or not living(actor) or not sameBucket(actor, patient)

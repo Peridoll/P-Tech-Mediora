@@ -31,8 +31,10 @@ Config = {
   -- Config.Wounds.Itemsの治療道具は自動的に収納対象になります。
   MedicalBag = {
     Slots = 24,
-    MaxWeight = 30000, -- g / バッグ本体の重量は含まない
-    ExtraItems = { 'pmediora_tablet' },
+    MaxWeight = 1000000, -- g / バッグ内部は1,000kg。持ち主の重量上限とは別。
+    ExtraItems = { 'pmediora_phoenixkit', 'pmediora_supplybox', 'pmediora_specialbox', 'pmediora_iv', 'pmediora_ivdrip' },
+    -- bag1〜bag4から作成時に1種類を抽選。取得できない場合は同梱の同じ画像を使う。
+    ImageBase = 'https://raw.githubusercontent.com/Peridoll/P-Tech-Mediora/feature/dev/resources/%5Bptech%5D/%5Bmediora%5D/ptech_mediora_medical/install/ox_inventory/images/',
   },
   Cooldown = 1000,
 
@@ -245,4 +247,17 @@ Config = {
 _/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/]]
   Debug = false,
   UI    = 'nui',
+}
+
+-- 個人医のフェニックスキット処置
+Config.PrivateMedic = {
+    Jobs = { private_medic = true, ambulance = true },
+    RequireDuty = true,
+    Item = 'pmediora_phoenixkit',
+    ConsumeCount = 1, -- 0なら消費しない。処置の実行前にサーバーで確認する。
+    Duration = 10000,
+    TargetDistance = 2.5,
+    ServerDistance = 3.0,
+    HealthBase = 100,
+    TargetLabel = 'フェニックスキットで救命処置',
 }

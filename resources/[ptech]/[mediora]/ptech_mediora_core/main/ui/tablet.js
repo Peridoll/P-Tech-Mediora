@@ -63,47 +63,6 @@
     element('notice-list-toggle').addEventListener('click', () => openNotice());
     element('home-notices-empty').addEventListener('click', () => openNotice());
 
-    let crutchBusy = false;
-    let crutchPatients = [];
-    async function crutchAction(action) {
-        if (crutchBusy) return;
-        const patient = crutchPatients.find(p => String(p.id) === element('crutch-patient').value);
-        if (action !== 'list' && !patient) {
-            element('crutch-status').textContent = '近くの患者を取得して選択してください。';
-            return;
-        }
-        crutchBusy = true;
-        const controls = element('crutch-form').querySelectorAll('button, input, select');
-        controls.forEach(control => control.disabled = true);
-        element('crutch-status').textContent = '処理中…';
-        try {
-            const result = await post('tabletCrutch', { action, targetId: patient?.id,
-                citizenId: patient?.citizenId, minutes: Number(element('crutch-minutes').value) });
-            if (action === 'list') {
-                crutchPatients = result.patients || [];
-                element('crutch-patient').replaceChildren();
-                for (const p of crutchPatients) {
-                    const option = document.createElement('option');
-                    option.value = String(p.id);
-                    option.textContent = `${p.name || '氏名未登録'}（ID ${p.id}）`;
-                    element('crutch-patient').append(option);
-                }
-            }
-            element('crutch-status').textContent = result.error || result.message
-                || (crutchPatients.length ? '患者を選択して操作してください。' : '近くに患者がいません。');
-        } catch {
-            element('crutch-status').textContent = '通信に失敗しました。もう一度操作してください。';
-        } finally {
-            crutchBusy = false;
-            controls.forEach(control => control.disabled = false);
-        }
-    }
-    element('crutch-refresh').addEventListener('click', () => crutchAction('list'));
-    element('crutch-form').addEventListener('submit', event => {
-        event.preventDefault();
-        crutchAction(event.submitter?.value);
-    });
-
     let page = 'home';
     let chartRequest = 0;
     let charts = [];
@@ -346,6 +305,7 @@
             price.textContent = shopMoney(item.price);
             const owned = document.createElement('span');
             owned.className = 'shop-owned';
+            owned.dataset.itemId = item.id;
             owned.textContent = '所持 ' + Number(item.owned ?? 0).toLocaleString('ja-JP') + '個';
             const add = document.createElement('button');
             add.type = 'button';
@@ -536,6 +496,7 @@
         element('notice-page-heading').focus({ preventScroll: true });
     }
     function resetAnnouncementEditor() {
+        resetNoticeDeletion();
         element('notice-editor').hidden = true;
         element('notice-layout').hidden = false;
         element('notice-form').reset();
@@ -586,8 +547,55 @@
         element('notice-detail-body').textContent = current?.body || '';
         element('notice-detail-meta').textContent = current ? announcementMeta(current) : '';
         element('notice-detail-edit').hidden = !homeCanEdit || !current;
+        element('notice-detail-delete').hidden = !homeCanEdit || !current;
         element('notice-page-new').hidden = !homeCanEdit;
     }
+    let pendingAnnouncementDelete;
+    function resetNoticeDeletion() {
+        pendingAnnouncementDelete = undefined;
+        element('notice-delete-confirm').hidden = true;
+        element('notice-delete-text').textContent = '';
+    }
+    element('notice-detail-delete').addEventListener('click', () => {
+        if (!opened || page !== 'notices' || !homeCanEdit || announcementSaving) return;
+        const current = announcements.find(item => item.id === activeAnnouncementId);
+        if (!current) return;
+        pendingAnnouncementDelete = { id: current.id, revision: announcementRevision, version: homeRequest };
+        element('notice-delete-text').textContent = '「' + current.title + '」を削除しますか？ 削除したお知らせは元に戻せません。';
+        element('notice-delete-confirm').hidden = false;
+        element('notice-delete-cancel').focus();
+    });
+    element('notice-delete-cancel').addEventListener('click', () => {
+        if (announcementSaving) return;
+        resetNoticeDeletion();
+        element('notice-detail-delete').focus();
+    });
+    element('notice-delete-accept').addEventListener('click', async () => {
+        const deletion = pendingAnnouncementDelete;
+        if (!opened || page !== 'notices' || !homeCanEdit || announcementSaving || !deletion
+            || deletion.version !== homeRequest) return;
+        const version = homeRequest;
+        announcementSaving = true;
+        for (const id of ['notice-delete-accept', 'notice-delete-cancel', 'notice-detail-delete']) element(id).disabled = true;
+        element('notice-page-status').textContent = '削除しています…';
+        try {
+            const result = await post('tabletAnnouncementDelete', { id: deletion.id, revision: deletion.revision });
+            if (!opened || page !== 'notices' || version !== homeRequest) return;
+            if (!result.ok) throw new Error(result.error || '削除できませんでした。');
+            announcements = announcements.filter(item => item.id !== deletion.id);
+            activeAnnouncementId = undefined;
+            resetNoticeDeletion();
+            renderNoticePage();
+            await loadHome();
+        } catch (error) {
+            if (opened && page === 'notices' && version === homeRequest) {
+                element('notice-page-status').textContent = error.message || '削除結果を確認できませんでした。更新して確認してください。';
+            }
+        } finally {
+            announcementSaving = false;
+            for (const id of ['notice-delete-accept', 'notice-delete-cancel', 'notice-detail-delete']) element(id).disabled = false;
+        }
+    });
     element('notice-new').addEventListener('click', () => openNotice(undefined, true));
     element('notice-page-new').addEventListener('click', () => editAnnouncement());
     element('notice-detail-edit').addEventListener('click', () => editAnnouncement(announcements.find(item => item.id === activeAnnouncementId)));
@@ -962,12 +970,45 @@
         if (page === 'resources') refreshResources();
         if (page === 'settings') loadAccess(request);
     }
+    const rescueForm = element('rescue-settings');
+    const rescueGroups = ['pd', 'other'];
+    rescueForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        const save = element('rescue-save');
+        if (!opened || page !== 'settings' || !isAdmin || save.disabled || !rescueForm.reportValidity()) return;
+        const version = request;
+        const settings = Object.fromEntries(rescueGroups.map(group => [group, {
+            enabled: element('rescue-' + group + '-enabled').checked,
+            minutes: element('rescue-' + group + '-minutes').valueAsNumber,
+        }]));
+        save.disabled = true;
+        try {
+            const result = await post('tabletRescueSave', settings);
+            if (opened && request === version) {
+                element('rescue-status').textContent = result?.ok ? '保存しました。' : '設定を保存できませんでした。';
+                if (result?.error === 'forbidden') rescueForm.hidden = true;
+            }
+        } catch {
+            if (opened && request === version) element('rescue-status').textContent = '設定を保存できませんでした。';
+        } finally {
+            save.disabled = false;
+        }
+    });
     async function loadAccess(version) {
+        rescueForm.hidden = true;
         try {
             const result = preview ? { ok: true, admin: false } : await post('tabletAccess');
             if (!opened || version !== request) return;
             if (!result.ok) throw new Error(result.error || 'unavailable');
             isAdmin = result.admin === true;
+            if (page === 'settings' && isAdmin && result.rescue) {
+                for (const group of rescueGroups) {
+                    element('rescue-' + group + '-enabled').checked = result.rescue[group].enabled;
+                    element('rescue-' + group + '-minutes').value = result.rescue[group].minutes;
+                }
+                element('rescue-status').textContent = '';
+                rescueForm.hidden = false;
+            }
             element('profile-name').textContent = result.profile?.name || '—';
             element('profile-role').textContent = result.profile?.role || '—';
             canManagePersonnel = result.personnel === true;
@@ -1122,6 +1163,13 @@
         }
     }
     window.addEventListener('message', ({ data, source }) => {
+        if (data?.action === 'shop:owned' && typeof data.id === 'string' && Number.isFinite(data.count) && data.count >= 0) {
+            const item = shopItems.find(entry => entry.id === data.id);
+            if (item) item.owned = data.count;
+            for (const label of element('shop-items').querySelectorAll('.shop-owned')) {
+                if (label.dataset.itemId === data.id) label.textContent = '所持 ' + data.count.toLocaleString('ja-JP') + '個';
+            }
+        }
         if (source && source !== window && source !== window.parent) return;
         if (data?.action === 'progress:theme') applyProgressTheme(data.theme);
         if (data?.action === 'tablet:open') {
@@ -1133,6 +1181,11 @@
     });
     window.addEventListener('keydown', (event) => {
         if (!opened) return;
+        if (event.key === 'Escape' && !element('notice-delete-confirm').hidden) {
+            event.preventDefault();
+            if (!announcementSaving) { resetNoticeDeletion(); element('notice-detail-delete').focus(); }
+            return;
+        }
         if ((event.key === 'ArrowUp' || event.key === 'ArrowDown')
             && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
             && !event.isComposing

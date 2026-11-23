@@ -2069,3 +2069,9 @@ Config.CombatLogCheckWait = 3 *
 -- Config.CombatLogCheckWait = 3 *
 --     seconds                               -- If you experience anti combat-log without death NUI, try increasing by a second or two.
 -- -- Don't touch the options between these comments unless there is reason --
+
+-- Wasabiの患者ターゲット（診察・蘇生・治療・鎮静）を非表示にする。
+-- config.luaへ追加。client.luaのwsb.target.player({...})だけを次の条件で囲む：
+-- if Config.EnablePatientTarget ~= false then ... end
+-- 担架・車両・受付のターゲットとMedicalの項目は維持する。
+Config.EnablePatientTarget = false

@@ -331,3 +331,64 @@ end)
 
 
 MedicalTreatment.canStart = function() return not activeExamination end
+
+-- Persistent distance display; deliberately independent of tablet focus/visibility.
+do
+    local active
+    local hudVisible = false
+    local function hud(data)
+        hudVisible = data.visible == true
+        data.action = 'medical:distance'
+        SendNUIMessage(data)
+    end
+    local function message(text, kind)
+        hud({ visible = true, message = text, kind = kind })
+        print('[Medical distance] '..text)
+    end
+    local function show(session)
+        hud({ visible = true, first = session.first, second = session.second, distance = session.distance })
+    end
+    local function stop()
+        active = nil
+        if hudVisible then hud({ visible = false }) end
+    end
+    RegisterCommand('distance', function(_, args)
+        if #args > 0 then message('距離を取得中…') end
+        TriggerServerEvent('ptech_mediora_medical:distance:request', args)
+    end, false)
+    RegisterNetEvent('ptech_mediora_medical:distance:control', function(data)
+        if source ~= 65535 or type(data) ~= 'table' then return end
+        if data.action == 'toggleOff' then
+            if active then stop()
+            else message('/distance ID1 ID2 で距離を表示します') end
+            return
+        end
+        if data.action == 'error' then
+            if active then show(active) else message(data.message or '距離を取得できませんでした', 'error') end
+            lib.notify({title='距離計測', description=data.message or '距離を取得できませんでした', type='error'})
+            return
+        end
+        if data.action ~= 'start' or not Medical.validId(data.first) or not Medical.validId(data.second)
+            or type(data.distance) ~= 'number' then return end
+        local session = { first = data.first, second = data.second, distance = data.distance }
+        active = session
+        show(session)
+        CreateThread(function()
+            while active == session do
+                Wait(500)
+                if active ~= session then return end
+                local ok, result = pcall(lib.callback.await, 'ptech_mediora_medical:distance', false, session.first, session.second)
+                if active ~= session then return end
+                if not ok or type(result) ~= 'table' or type(result.distance) ~= 'number' then
+                    stop()
+                    message(ok and type(result)=='table' and result.error or '距離を取得できませんでした', 'error')
+                    return
+                end
+                session.distance = result.distance
+                show(session)
+            end
+        end)
+    end)
+    AddEventHandler('QBCore:Client:OnPlayerUnload', stop)
+    print('[ptech_mediora_medical] distance HUD ready (embedded in main/client/client.lua)')
+end

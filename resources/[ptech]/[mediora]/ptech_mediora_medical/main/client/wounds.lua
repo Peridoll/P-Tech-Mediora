@@ -1,14 +1,3 @@
--- Use Wasabi's removal API so its persisted timer is cleared as well as the prop.
-RegisterNetEvent('ptech_mediora_medical:removeCrutch', function()
-    if source ~= 65535 or GetResourceState('wasabi_crutch') ~= 'started' then return end
-    local ok, result = pcall(function()
-        return exports.wasabi_crutch:RemoveCrutch(GetPlayerServerId(PlayerId()))
-    end)
-    if not ok or result == false then
-        lib.notify({title='松葉杖', description='解除できませんでした。EMSに再操作を依頼してください', type='error'})
-    end
-end)
-
 MedicalWoundClient = {}
 local C, W = MedicalWoundClient, MedicalWounds
 local snapshot, citizenId, token, revision, sequence = nil, nil, nil, -1, 0

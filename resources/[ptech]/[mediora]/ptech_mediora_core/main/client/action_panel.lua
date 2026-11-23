@@ -1,4 +1,6 @@
 local panels = {}
+local panelOrder = {}
+local uiReady = false
 local switchKey = (Config and Config.ActionPanel and Config.ActionPanel.switchKey) or 'Z'
 local keybind
 
@@ -33,19 +35,24 @@ local function setActionPanel(panel)
         clean.progress = math.max(0, math.min(100, panel.progress))
     end
 
+    if not panels[clean.id] then panelOrder[#panelOrder + 1] = clean.id end
     panels[clean.id] = clean
-    send('setPanel', { id = clean.id, panel = clean })
+    if uiReady then send('setPanel', { id = clean.id, panel = clean }) end
     return true
 end
 
 local function removeActionPanel(id)
     if not validId(id) then return false end
     panels[id] = nil
-    send('removePanel', { id = id })
+    for index, registered in ipairs(panelOrder) do
+        if registered == id then table.remove(panelOrder, index); break end
+    end
+    if uiReady then send('removePanel', { id = id }) end
     return true
 end
 
 local function nextActionPanel()
+    if not uiReady then return false end
     send('nextTab')
     return true
 end
@@ -88,7 +95,7 @@ local function finishPositionEditing()
 end
 
 local function editActionPanel(fromInventory, fromDeath)
-    if positionEditing or IsPauseMenuActive() then return false end
+    if not uiReady or positionEditing or IsPauseMenuActive() then return false end
     if IsNuiFocused() and LocalPlayer.state.invOpen ~= true then return false end
     positionEditing = true
     inventoryPositionEditing = fromInventory == true
@@ -171,9 +178,39 @@ end)
 
 exports('editActionPanel', editActionPanel)
 
+-- 一時診断: 実機に配信されたRescueのmanifestと入口ファイルだけを読み取る。
+local function reportRescueRuntime()
+    local ok, err = pcall(function()
+        local resource = 'ptech_mediora_rescue'
+        local count = GetNumResourceMetadata(resource, 'client_script')
+        print(('[ptech_mediora_core] RESCUE_RUNTIME state=%s version=%s serverOnly=%s clients=%d')
+            :format(GetResourceState(resource), tostring(GetResourceMetadata(resource, 'version', 0) or 'unknown'),
+                tostring(GetResourceMetadata(resource, 'server_only', 0) or 'unset'), count))
+        for index = 0, count - 1 do
+            local path = GetResourceMetadata(resource, 'client_script', index)
+            local data = path and LoadResourceFile(resource, path)
+            print(('[ptech_mediora_core] RESCUE_FILE path=%s bytes=%d entryV3=%s')
+                :format(tostring(path), data and #data or 0, tostring(data and data:find('entry-v3', 1, true) ~= nil or false)))
+        end
+    end)
+    if not ok then print('[ptech_mediora_core] RESCUE_DIAG_FAILED ' .. tostring(err)) end
+end
+
+AddEventHandler('onClientResourceStart', function(resource)
+    if resource == 'ptech_mediora_rescue' then reportRescueRuntime() end
+end)
+
 RegisterNUICallback('actionPanelReady', function(_, cb)
+    uiReady = true
     finishPositionEditing()
+    send('configure')
+    -- exportsが受理したパネルを、CEFの準備完了・再読込時に登録順で復元する。
+    for _, id in ipairs(panelOrder) do
+        send('setPanel', { id = id, panel = panels[id] })
+    end
+    print(('[ptech_mediora_core] action panel READY build=panel-sync-v2 replayed=%d'):format(#panelOrder))
     cb({ ok = true })
+    reportRescueRuntime()
 end)
 
 RegisterNUICallback('actionPanelEditing', function(data, cb)
@@ -233,4 +270,5 @@ AddEventHandler('onResourceStop', function(resource)
     finishPositionEditing()
     panels = {}
     send('clearPanels')
+    panelOrder, uiReady = {}, false
 end)

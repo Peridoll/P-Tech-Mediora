@@ -1,3 +1,11 @@
+-- Rank labels come from the current Qbox definition, never cached PlayerData names.
+local function currentGradeName(job, fallback)
+    local level = job and job.grade and tonumber(job.grade.level)
+    local definition = job and job.name and exports.qbx_core:GetJob(job.name)
+    local grade = definition and definition.grades and level and definition.grades[level]
+    return grade and grade.name or fallback
+end
+
 local function hasTablet(source)
     return (exports.ox_inventory:GetItemCount(source, Config.Tablet.item) or 0) > 0
 end
@@ -10,6 +18,46 @@ local function isAdmin(source)
     end
     return false
 end
+
+local rescueSettingsKey = 'tabletRescueSettings'
+local rescueSettings = {
+    pd = { enabled = true, minutes = 5 },
+    other = { enabled = false, minutes = 5 },
+}
+
+local function validRescueSettings(settings)
+    if type(settings) ~= 'table' then return false end
+    for _, group in ipairs({ 'pd', 'other' }) do
+        local entry = settings[group]
+        if type(entry) ~= 'table' or type(entry.enabled) ~= 'boolean'
+            or type(entry.minutes) ~= 'number' or entry.minutes < 0 or entry.minutes > 1440
+            or entry.minutes % 1 ~= 0 then return false end
+    end
+    return true
+end
+
+local storedRescueSettings = GetResourceKvpString(rescueSettingsKey)
+if storedRescueSettings then
+    local ok, decoded = pcall(json.decode, storedRescueSettings)
+    if ok and validRescueSettings(decoded) then rescueSettings = decoded end
+end
+
+exports('getRescueSettings', function(isPd)
+    local entry = rescueSettings[isPd and 'pd' or 'other']
+    return entry.enabled, entry.minutes * 60000
+end)
+
+lib.callback.register('ptech_mediora_core:tabletRescueSave', function(source, settings)
+    if not hasTablet(source) or not isAdmin(source) then return { ok = false, error = 'forbidden' } end
+    if not validRescueSettings(settings) then return { ok = false, error = 'invalid_settings' } end
+    local clean = {
+        pd = { enabled = settings.pd.enabled, minutes = settings.pd.minutes },
+        other = { enabled = settings.other.enabled, minutes = settings.other.minutes },
+    }
+    SetResourceKvp(rescueSettingsKey, json.encode(clean))
+    rescueSettings = clean
+    return { ok = true }
+end)
 
 local function getPersonnelManager(source)
     if not hasTablet(source) then return end
@@ -82,6 +130,38 @@ end)
 
 local personnelLocks = {}
 
+local function personnelMultijob()
+    local resource = Config.Tablet.multijobResource
+    if resource == false then return nil end
+    resource = resource or 'ps-multijob'
+    local state = GetResourceState(resource)
+    if state == 'missing' then return nil end
+    if state ~= 'started' then
+        return nil, 'マルチジョブ管理が停止中です。起動してから役職を変更してください。'
+    end
+    return resource
+end
+
+local function syncPersonnelMultijob(resource, citizenid, job, grade)
+    if not resource then return true end
+    local ok, err = pcall(function()
+        if grade == nil then exports[resource]:RemoveJob(citizenid, job)
+        else exports[resource]:AddJob(citizenid, job, grade) end
+    end)
+    if not ok then return false, err end
+    -- ps-multijob writes asynchronously. Do not report success until its saved roster agrees.
+    local deadline = GetGameTimer() + 5000
+    repeat
+        if GetResourceState(resource) ~= 'started' then return false, 'multijob_stopped' end
+        local readOk, jobs = pcall(function() return exports[resource]:GetJobs(citizenid) end)
+        if not readOk then return false, jobs end
+        if type(jobs) == 'table' and ((grade == nil and jobs[job] == nil)
+            or (grade ~= nil and tonumber(jobs[job]) == grade)) then return true end
+        Wait(100)
+    until GetGameTimer() >= deadline
+    return false, 'multijob_save_not_confirmed'
+end
+
 local function changePersonnel(source, request)
     local manager = getPersonnelManager(source)
     if not manager then return { ok = false, error = personnelDenied } end
@@ -106,6 +186,8 @@ local function changePersonnel(source, request)
         return { ok = false, error = '対象の階級が変更されたか、操作権限がありません。一覧を更新してください。' }
     end
 
+    local multijob, multijobError = personnelMultijob()
+    if multijobError then return { ok = false, error = multijobError } end
     local success, err
     if action == 'dismiss' then
         success, err = exports.qbx_core:RemovePlayerFromJob(id, job)
@@ -128,6 +210,13 @@ local function changePersonnel(source, request)
     if not success then
         local message = err and err.code == 'max_jobs' and '対象者の兼職枠が上限に達しています。' or '人事情報を保存できませんでした。'
         return { ok = false, error = message }
+    end
+    local syncedGrade
+    if action ~= 'dismiss' then syncedGrade = request.level end
+    local synced, syncError = syncPersonnelMultijob(multijob, id, job, syncedGrade)
+    if not synced then
+        print(('[ptech_mediora_core] personnel multijob sync failed: job=%s target=%s error=%s'):format(job, id, tostring(syncError)))
+        return { ok = false, error = '役職は変更されましたが、マルチジョブ側の保存を確認できませんでした。一覧を更新し、同じ役職でもう一度設定してください。' }
     end
     print(('[ptech_mediora_core] personnel: %s job=%s actor=%s target=%s grade=%s'):format(action, job, managerId, id, tostring(request.level)))
     return { ok = true }
@@ -251,17 +340,55 @@ lib.callback.register('ptech_mediora_core:tabletAnnouncementSave', function(sour
     return { ok = true }
 end)
 
+lib.callback.register('ptech_mediora_core:tabletAnnouncementDelete', function(source, request)
+    if not getPersonnelManager(source) then
+        return { ok = false, error = 'お知らせの削除には上官以上の権限が必要です。' }
+    end
+    if not announcementState then return { ok = false, error = 'お知らせを削除できません。管理者に確認してください。' } end
+    if type(request) ~= 'table' or type(request.id) ~= 'number' or request.id <= 0 or request.id % 1 ~= 0 then
+        return { ok = false, error = '削除するお知らせを選択してください。' }
+    end
+    if request.revision ~= announcementState.revision then
+        return { ok = false, error = 'ほかの職員がお知らせを更新しました。更新して内容を確認してください。' }
+    end
+    local nextState = { revision = announcementState.revision + 1, nextId = announcementState.nextId, items = {} }
+    local found = false
+    for _, item in ipairs(announcementState.items) do
+        if item.id == request.id then found = true
+        else nextState.items[#nextState.items + 1] = item end
+    end
+    if not found then return { ok = false, error = '削除するお知らせが見つかりません。更新して確認してください。' } end
+    local encoded = json.encode(nextState)
+    local ok, err = pcall(function()
+        SetResourceKvp(announcementKey, encoded)
+        assert(GetResourceKvpString(announcementKey) == encoded, 'announcement persistence failed')
+    end)
+    if not ok then
+        local stored = GetResourceKvpString(announcementKey)
+        if stored then
+            local decoded, state = pcall(json.decode, stored)
+            announcementState = decoded and validAnnouncementState(state) and state or nil
+        end
+        print(('[ptech_mediora_core] Home announcement delete failed: %s'):format(tostring(err)))
+        return { ok = false, error = '削除結果を確認できませんでした。更新して確認してください。' }
+    end
+    announcementState = nextState
+    return { ok = true }
+end)
+
 lib.callback.register('ptech_mediora_core:tabletAccess', function(source)
     if not hasTablet(source) then return { ok = false, error = 'item_required' } end
     local player = exports.qbx_core:GetPlayer(source)
     local data = player and player.PlayerData
     if not data then return { ok = false, error = 'player_unavailable' } end
     local job = data.job or {}
+    local admin = isAdmin(source)
     return {
-        ok = true, admin = isAdmin(source), personnel = getPersonnelManager(source) ~= nil,
+        ok = true, admin = admin, personnel = getPersonnelManager(source) ~= nil,
+        rescue = admin and rescueSettings or nil,
         profile = {
             name = characterName(data),
-            role = job.grade and job.grade.name or job.label or '役職未設定',
+            role = currentGradeName(job, '役職未設定'),
         },
     }
 end)
@@ -281,7 +408,7 @@ lib.callback.register('ptech_mediora_core:tabletHome', function(source, request)
             if includeRoster then
                 roster[#roster + 1] = {
                     name = characterName(data),
-                    grade = job.grade and job.grade.name or '階級未登録',
+                    grade = currentGradeName(job, '階級未登録'),
                 }
             end
         end

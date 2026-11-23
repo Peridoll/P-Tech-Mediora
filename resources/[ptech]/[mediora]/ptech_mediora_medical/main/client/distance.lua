@@ -1,0 +1,1 @@
+-- Distance is embedded in the existing main client/client.lua to avoid missing additional script loads.

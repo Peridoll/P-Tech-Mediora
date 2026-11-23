@@ -29,6 +29,7 @@ function RegisterCommand(name, fn, restricted) commands[name] = fn; restrictedCo
 function CreateThread(fn) fn() end
 function GetPlayers() return {} end
 function GetCurrentResourceName() return 'ptech_mediora_medical' end
+function GetResourcePath() return '/test/ptech_mediora_medical' end
 function GetGameTimer() return clock end
 function SetTimeout(ms, fn) timers[#timers + 1] = {ms = ms, fn = fn} end
 function GetResourceState(name) return name == 'wasabi_ambulance' and 'started' or 'missing' end

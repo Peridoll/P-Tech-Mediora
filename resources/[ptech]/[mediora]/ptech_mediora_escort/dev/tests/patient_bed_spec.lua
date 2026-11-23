@@ -1,5 +1,5 @@
 local events, exported, sent = {}, {}, {}
-local caller = 'ptech_omnite_seating'
+local caller = 'ptech_omnite_toolbox'
 local buckets = {[1]=0,[2]=0,[3]=0}
 local mt={__sub=function(a,b) return setmetatable({distance=math.abs(a.x-b.x)}, {__len=function(v) return v.distance end}) end}
 local positions={[1]=setmetatable({x=0},mt),[2]=setmetatable({x=0},mt),[3]=setmetatable({x=0},mt)}
@@ -30,13 +30,16 @@ end}},{__call=function(_,name,fn) exported[name]=fn end})
 function runBedTransferSpecs()
     local transfer=exported.PreparePatientBed
     assert(transfer(1,2),'nearby uncarried patient can transfer')
+    caller='ptech_omnite_seating'
+    assert(transfer(1,2),'legacy seating resource remains compatible')
+    caller='ptech_omnite_toolbox'
     source=1 events['ptech_mediora_escort:server:start'](2)
     assert(states[1].emsEscorting==2 and states[2].emsEscortedBy==1,'patient carried before bed transfer')
     assert(not transfer(3,2),'another EMS cannot interrupt existing carrier')
     assert(states[2].emsEscortedBy==1,'denied transfer keeps carry session')
     caller='untrusted'
     assert(not transfer(1,2),'restricted export rejects other resources')
-    caller='ptech_omnite_seating' duty=false
+    caller='ptech_omnite_toolbox' duty=false
     assert(not transfer(1,2),'off-duty actor cannot transfer')
     duty=true buckets[2]=1
     assert(not transfer(1,2),'different routing bucket rejected')
